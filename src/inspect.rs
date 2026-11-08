@@ -228,12 +228,28 @@ fn text_check(pdf_path: &Path, expected: &BTreeSet<String>) -> TextCheck {
             ..TextCheck::default()
         };
     };
+    compare_text(&text, expected)
+}
+
+/// Compares an extracted PDF text layer with the words expected from the HTML.
+fn compare_text(text: &str, expected: &BTreeSet<String>) -> TextCheck {
     let unmapped = text
         .chars()
         .filter(|c| *c == '\u{FFFD}' || ('\u{E000}'..='\u{F8FF}').contains(c))
         .count();
-    let found = words(&text);
-    let missing: Vec<String> = expected.difference(&found).cloned().collect();
+    let found = words(text);
+    // A word wrapped at a hyphen ("kobus-" / "oberholzer") is joined by the extractor
+    // into one longer word, so a word that begins or ends a found word is present.
+    let missing: Vec<String> = expected
+        .difference(&found)
+        .filter(|word| {
+            !found.iter().any(|candidate| {
+                candidate.len() > word.len()
+                    && (candidate.starts_with(word.as_str()) || candidate.ends_with(word.as_str()))
+            })
+        })
+        .cloned()
+        .collect();
     TextCheck {
         status: if missing.is_empty() && unmapped == 0 {
             "passed"
@@ -518,6 +534,19 @@ mod tests {
             normalize_link("https://example.com/A"),
             normalize_link("https://example.com/a")
         );
+    }
+
+    #[test]
+    fn words_split_by_line_end_hyphens_count_as_present() {
+        // pdftotext joins "kobus-" at a line end with "oberholzer" on the next line.
+        let expected: BTreeSet<String> = ["kobus", "oberholzer", "absent"]
+            .iter()
+            .map(|w| w.to_string())
+            .collect();
+        let check = compare_text("linkedin.com/in/kobusoberholzer \u{FFFD}", &expected);
+        assert_eq!(check.missing_words, ["absent"]);
+        assert_eq!(check.unmapped_characters, 1);
+        assert_eq!(check.status, "failed");
     }
 
     #[test]
