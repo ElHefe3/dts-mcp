@@ -39,8 +39,7 @@ def connection():
     if result.returncode:
         raise RuntimeError("SSH connection failed: " + result.stderr.strip())
     env = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
-    # The deployed service was renamed; accept the current and the original variable name.
-    token = env.get("DOCUMENT_TEMPLATING_MCP_TOKEN") or env.get("DOCUMENT_MCP_TOKEN")
+    token = env.get("DOCUMENT_TEMPLATING_MCP_TOKEN")
     if not token:
         raise RuntimeError(f"No DOCUMENT_TEMPLATING_MCP_TOKEN in {REMOTE}/.env")
     token = token.strip().strip('"').strip("'")
@@ -77,7 +76,7 @@ def save_rendered_file(data):
     if not isinstance(document_id, str) or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?", document_id):
         raise ValueError("Unsafe rendered document identifier")
     directory = Path(os.environ.get(
-        "DOCUMENT_MCP_DOWNLOAD_DIR", str(Path(__file__).resolve().parents[1] / "output")
+        "DOCUMENT_TEMPLATING_MCP_DOWNLOAD_DIR", str(Path(__file__).resolve().parents[1] / "output")
     )).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{document_id}.html"
@@ -102,7 +101,7 @@ def save_rendered_pdf(data, content):
     if not pdf.startswith(b"%PDF-"):
         raise ValueError("Invalid PDF resource")
     directory = Path(os.environ.get(
-        "DOCUMENT_MCP_DOWNLOAD_DIR", str(Path(__file__).resolve().parents[1] / "output")
+        "DOCUMENT_TEMPLATING_MCP_DOWNLOAD_DIR", str(Path(__file__).resolve().parents[1] / "output")
     )).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{document_id}.pdf"

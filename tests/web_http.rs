@@ -5,7 +5,7 @@ use axum::{
     http::{header, Request, StatusCode},
     Router,
 };
-use document_mcp::{
+use document_templating_mcp::{
     model::{FieldDefinition, FieldType, Template, TemplateRender, TemplateSection},
     server::DocumentMcpServer,
     store::Store,
@@ -151,7 +151,7 @@ async fn browser_api_supports_the_complete_visual_workflow() {
     assert_eq!(status, StatusCode::OK);
     assert!(preview["html"].as_str().unwrap().contains("Unsaved"));
 
-    let mut saved: document_mcp::model::Document =
+    let mut saved: document_templating_mcp::model::Document =
         serde_json::from_value(document).unwrap();
     saved.data["recipient"] = json!("Saved recipient");
     let (status, _, _) = request(
@@ -176,7 +176,7 @@ async fn browser_api_supports_the_complete_visual_workflow() {
     assert_eq!(status, StatusCode::OK);
     assert!(html.as_str().unwrap().contains("Saved recipient"));
 
-    let renderer = std::env::var("DOCUMENT_MCP_WKHTMLTOPDF")
+    let renderer = std::env::var("DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF")
         .unwrap_or_else(|_| "wkhtmltopdf".to_string());
     if Command::new(&renderer).arg("--version").output().is_ok() {
         let (status, _, pdf) = request(
@@ -238,5 +238,5 @@ async fn rejects_invalid_origins_and_requires_mcp_bearer_auth() {
     assert_eq!(response.status(), StatusCode::OK);
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let text = String::from_utf8_lossy(&bytes);
-    assert!(text.contains("document-mcp"), "{text}");
+    assert!(text.contains("document-templating-mcp"), "{text}");
 }

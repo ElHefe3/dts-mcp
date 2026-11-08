@@ -1,4 +1,4 @@
-use document_mcp::{
+use document_templating_mcp::{
     error::AppError,
     model::{Document, FieldDefinition, FieldType, Template, TemplateRender, TemplateSection},
     store::Store,

@@ -15,7 +15,7 @@ class DocumentFilesTests(unittest.IsolatedAsyncioTestCase):
     async def test_render_delivers_utf8_file_and_link(self):
         html = "<!doctype html><h1>Ticket · café</h1>"
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
-            "DOCUMENT_MCP_DOWNLOAD_DIR": directory
+            "DOCUMENT_TEMPLATING_MCP_DOWNLOAD_DIR": directory
         }):
             result = ToolResult(content=[], structured_content={"document_id": "ticket--one", "html": html})
 
@@ -42,7 +42,7 @@ class DocumentFilesTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
-            "DOCUMENT_MCP_DOWNLOAD_DIR": directory
+            "DOCUMENT_TEMPLATING_MCP_DOWNLOAD_DIR": directory
         }):
             result = ToolResult(
                 content=[resource], structured_content={"document_id": "ticket-one"}

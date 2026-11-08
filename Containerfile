@@ -25,15 +25,15 @@ RUN fc-cache -f \
     && test "$(fc-match -f '%{family}' sans-serif)" = 'Liberation Sans' \
     && test "$(fc-match -f '%{family}' serif)" = 'Liberation Serif' \
     && test "$(fc-match -f '%{family}' monospace)" = 'Liberation Mono'
-COPY --from=build /src/target/release/document-mcp /usr/local/bin/document-mcp
-ENV DOCUMENT_MCP_TRANSPORT=http \
-    DOCUMENT_MCP_HTTP_ADDR=0.0.0.0:8080 \
-    DOCUMENT_MCP_DATA_DIR=/data \
-    DOCUMENT_MCP_WKHTMLTOPDF=/usr/bin/wkhtmltopdf \
+COPY --from=build /src/target/release/document-templating-mcp /usr/local/bin/document-templating-mcp
+ENV DOCUMENT_TEMPLATING_MCP_TRANSPORT=http \
+    DOCUMENT_TEMPLATING_MCP_HTTP_ADDR=0.0.0.0:8080 \
+    DOCUMENT_TEMPLATING_MCP_DATA_DIR=/data \
+    DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF=/usr/bin/wkhtmltopdf \
     HOME=/tmp
 USER documents
 VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl --fail --silent http://127.0.0.1:8080/healthz || exit 1
-ENTRYPOINT ["/usr/local/bin/document-mcp"]
+ENTRYPOINT ["/usr/local/bin/document-templating-mcp"]

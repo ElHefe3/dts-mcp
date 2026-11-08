@@ -34,7 +34,7 @@ struct WebState {
 
 pub async fn serve(store: Store, address: SocketAddr, token: String) -> anyhow::Result<()> {
     if token.len() < 32 {
-        anyhow::bail!("DOCUMENT_MCP_TOKEN must contain at least 32 characters");
+        anyhow::bail!("DOCUMENT_TEMPLATING_MCP_TOKEN must contain at least 32 characters");
     }
     let store = Arc::new(store);
     let server = DocumentMcpServer::with_shared_store(store.clone());

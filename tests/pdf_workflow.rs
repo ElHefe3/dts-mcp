@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use base64::Engine;
-use document_mcp::{
+use document_templating_mcp::{
     model::{Document, Template, TemplateRender},
     pdf::PdfRenderer,
     store::Store,
@@ -15,11 +15,11 @@ impl PdfRenderer for StubRenderer {
     fn render(
         &self,
         html_path: &std::path::Path,
-    ) -> document_mcp::error::Result<Vec<u8>> {
+    ) -> document_templating_mcp::error::Result<Vec<u8>> {
         assert!(html_path.is_file());
         self.0
             .clone()
-            .ok_or_else(|| document_mcp::error::AppError::storage("converter failed"))
+            .ok_or_else(|| document_templating_mcp::error::AppError::storage("converter failed"))
     }
 }
 
@@ -78,7 +78,7 @@ fn adapter_failures_never_replace_the_last_valid_pdf() {
 
 #[test]
 fn renders_a_binary_pdf_with_links_and_embedded_assets_when_wkhtmltopdf_is_available() {
-    let renderer = std::env::var("DOCUMENT_MCP_WKHTMLTOPDF")
+    let renderer = std::env::var("DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF")
         .unwrap_or_else(|_| "wkhtmltopdf".to_string());
     if Command::new(&renderer).arg("--version").output().is_err() {
         eprintln!("skipping PDF integration test: wkhtmltopdf is not installed");

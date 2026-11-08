@@ -25,8 +25,8 @@ use crate::{
     store::Store,
 };
 
-const GALLERY_UI_URI: &str = "ui://document-mcp/gallery";
-const EDITOR_UI_URI: &str = "ui://document-mcp/editor";
+const GALLERY_UI_URI: &str = "ui://document-templating/gallery";
+const EDITOR_UI_URI: &str = "ui://document-templating/editor";
 const UI_MIME_TYPE: &str = "text/html;profile=mcp-app";
 const DOCUMENT_URI_PREFIX: &str = "document://renders/";
 const APP_HTML: &str = include_str!("../web/dist/index.html");

@@ -16,7 +16,7 @@ A local-first Model Context Protocol server for reusable document templates and 
 ## Run
 
 ```powershell
-$env:DOCUMENT_MCP_DATA_DIR = "C:\document-mcp-data"
+$env:DOCUMENT_TEMPLATING_MCP_DATA_DIR = "C:\document-mcp-data"
 cargo run
 ```
 
@@ -38,9 +38,9 @@ Build first with `cargo build`, then configure a client to launch the binary. Fo
 {
   "mcpServers": {
     "documents": {
-      "command": "D:\\projects\\job-hunt\\documents\\document-mcp\\target\\debug\\document-mcp.exe",
+      "command": "D:\\projects\\job-hunt\\documents\\document-mcp\\target\\debug\\document-templating-mcp.exe",
       "env": {
-        "DOCUMENT_MCP_DATA_DIR": "C:\\document-mcp-data"
+        "DOCUMENT_TEMPLATING_MCP_DATA_DIR": "C:\\document-mcp-data"
       }
     }
   }
@@ -116,7 +116,7 @@ This URI is an MCP resource identifier, not a public browser URL.
 
 The registered Codex SSH bridge automatically writes the returned document into
 this project's `output/` directory and adds `local_path`, `file_uri`, and a clickable
-file link to the result. Set `DOCUMENT_MCP_DOWNLOAD_DIR` to choose another
+file link to the result. Set `DOCUMENT_TEMPLATING_MCP_DOWNLOAD_DIR` to choose another
 download directory. Rendering the same document updates its local HTML copy.
 Clients should present that attachment or link after rendering instead of showing
 only the Docker-internal output path. The save helper also returns a local file.
@@ -132,7 +132,7 @@ and supported links remain clickable. The PDF is also available through the
 authenticated browser route `/renders/acme-application.pdf`.
 
 The container installs wkhtmltopdf and Liberation fonts. For local PDF rendering,
-set `DOCUMENT_MCP_WKHTMLTOPDF`, provide a project-local renderer, or
+set `DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF`, provide a project-local renderer, or
 install wkhtmltopdf on `PATH`. The SSH bridge saves the returned binary attachment
 to `output/` and adds a local clickable path. See the [PDF rendering guide](docs/pdf-rendering.html)
 for adapter diagrams, renderer discovery, and troubleshooting, and the

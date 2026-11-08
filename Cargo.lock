@@ -280,7 +280,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "document-mcp"
+name = "document-templating-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -1,5 +1,5 @@
 [package]
-name = "document-mcp"
+name = "document-templating-mcp"
 version = "0.1.0"
 edition = "2021"
 description = "A persistent document template registry and renderer exposed over MCP"

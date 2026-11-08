@@ -15,8 +15,8 @@ struct Client {
 
 impl Client {
     fn start(data_dir: &TempDir) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_document-mcp"))
-            .env("DOCUMENT_MCP_DATA_DIR", data_dir.path())
+        let mut child = Command::new(env!("CARGO_BIN_EXE_document-templating-mcp"))
+            .env("DOCUMENT_TEMPLATING_MCP_DATA_DIR", data_dir.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -74,7 +74,7 @@ fn serves_the_complete_template_workflow_over_stdio() {
             "clientInfo": {"name": "integration-test", "version": "1.0.0"}
         }),
     );
-    assert_eq!(initialized["serverInfo"]["name"], "document-mcp");
+    assert_eq!(initialized["serverInfo"]["name"], "document-templating-mcp");
     writeln!(
         client.stdin,
         "{}",
@@ -92,7 +92,7 @@ fn serves_the_complete_template_workflow_over_stdio() {
         .unwrap();
     assert_eq!(
         gallery_tool["_meta"]["ui"]["resourceUri"],
-        "ui://document-mcp/gallery"
+        "ui://document-templating/gallery"
     );
 
     let resources = client.request("resources/list", json!({}));
@@ -104,7 +104,7 @@ fn serves_the_complete_template_workflow_over_stdio() {
     );
     let resource = client.request(
         "resources/read",
-        json!({"uri": "ui://document-mcp/gallery"}),
+        json!({"uri": "ui://document-templating/gallery"}),
     );
     assert_eq!(
         resource["contents"][0]["mimeType"],
@@ -168,7 +168,7 @@ fn serves_the_complete_template_workflow_over_stdio() {
         json!({"uri": "document://renders/welcome.html"}),
     );
     assert_eq!(resource["contents"][0]["text"], html);
-    let renderer = std::env::var_os("DOCUMENT_MCP_WKHTMLTOPDF")
+    let renderer = std::env::var_os("DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF")
         .unwrap_or_else(|| "wkhtmltopdf".into());
     if Command::new(renderer).arg("--version").output().is_ok() {
         let pdf = client.call_tool("render_pdf", json!({"id": "welcome"}));

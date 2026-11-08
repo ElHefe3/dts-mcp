@@ -33,7 +33,7 @@ impl WkhtmltopdfRenderer {
     pub fn discover() -> Result<Self> {
         let root = env::current_dir().map_err(AppError::storage)?;
         Ok(Self {
-            renderer: select_renderer(&root, env::var_os("DOCUMENT_MCP_WKHTMLTOPDF")),
+            renderer: select_renderer(&root, env::var_os("DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF")),
         })
     }
 }
@@ -103,7 +103,7 @@ impl PdfRenderer for WkhtmltopdfRenderer {
             html_path.display(),
             output_path.display()
         );
-        let output = command.output().map_err(|error| AppError::storage(format!("failed to run PDF renderer: {error}\n{context}\nSet DOCUMENT_MCP_WKHTMLTOPDF or install wkhtmltopdf on PATH")))?;
+        let output = command.output().map_err(|error| AppError::storage(format!("failed to run PDF renderer: {error}\n{context}\nSet DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF or install wkhtmltopdf on PATH")))?;
         validate_output(&output, &output_path, &context)
     }
 }
@@ -189,7 +189,7 @@ mod tests {
         assert!(error.contains("PDF cwd:"));
         assert!(error.contains("PDF input:"));
         assert!(error.contains("PDF output:"));
-        assert!(error.contains("DOCUMENT_MCP_WKHTMLTOPDF"));
+        assert!(error.contains("DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF"));
     }
 
     #[test]
