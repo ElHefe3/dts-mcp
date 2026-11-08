@@ -18,9 +18,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::{
+    assets,
     error::AppError,
     model::{
-        Deleted, Document, DocumentSummary, EditorState, RenderedPreview, Template, TemplateGallery,
+        AssetSummary, Deleted, Document, DocumentSummary, EditorState, PdfReport, RenderedPreview,
+        Template, TemplateGallery,
     },
     store::Store,
 };
@@ -73,6 +75,32 @@ pub struct CreateDocumentRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct UpdateDocumentRequest {
     pub document: Document,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UploadAssetRequest {
+    /// File name such as `photo.png` or `inter-400.woff2`; reference it as `asset://<name>`.
+    pub name: String,
+    /// File content as base64 (a `data:...;base64,` prefix is accepted). Max 5 MB.
+    pub data_base64: String,
+    /// Overwrite an existing asset with the same name.
+    #[serde(default)]
+    pub replace: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AssetNameRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PageImagesRequest {
+    /// ID of a saved document.
+    pub id: String,
+    /// Resolution, 36-150 (default 80). 80 dpi is enough to judge layout.
+    pub dpi: Option<u32>,
+    /// Number of leading pages to return, 1-10 (default all, up to 10).
+    pub max_pages: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -253,21 +281,111 @@ impl DocumentMcpServer {
     }
 
     #[tool(
-        description = "Render a document as a real PDF with selectable text, assets, and clickable links"
+        description = "Render a saved document to PDF with headless Chromium: the layout matches the HTML, text is selectable and machine-readable, links are clickable and the PDF is tagged. Returns the PDF and a `report` that checks pages, text layer, links and images against the HTML; act on report.warnings."
     )]
     fn render_pdf(
         &self,
         Parameters(request): Parameters<IdRequest>,
     ) -> Result<CallToolResult, McpError> {
         let rendered = self.store.render_pdf(&request.id).map_err(mcp_error)?;
+        let summary = report_summary(&rendered.report);
         let metadata = serde_json::to_value(&rendered)
             .map_err(|error| McpError::internal_error(error.to_string(), None))?;
         let contents = ResourceContents::blob(rendered.pdf_base64, &rendered.resource_uri)
             .with_mime_type("application/pdf");
         let mut result = CallToolResult::structured(metadata);
+        result.content.push(ContentBlock::text(summary));
         result.content.push(ContentBlock::resource(contents));
         Ok(result)
     }
+
+    #[tool(
+        description = "Render a saved document to PDF and return PNG images of its pages, so you can see the exact printed layout (page breaks, overflow, spacing). Also returns the PDF report."
+    )]
+    fn render_page_images(
+        &self,
+        Parameters(request): Parameters<PageImagesRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let (info, images) = self
+            .store
+            .render_page_images(&request.id, request.dpi, request.max_pages)
+            .map_err(mcp_error)?;
+        let summary = report_summary(&info.report);
+        let metadata = serde_json::to_value(&info)
+            .map_err(|error| McpError::internal_error(error.to_string(), None))?;
+        let mut result = CallToolResult::structured(metadata);
+        result.content.push(ContentBlock::text(summary));
+        for png in images {
+            result.content.push(ContentBlock::image(
+                base64::engine::general_purpose::STANDARD.encode(png),
+                "image/png",
+            ));
+        }
+        Ok(result)
+    }
+
+    #[tool(
+        description = "Upload an image or font (png, jpg, gif, webp, svg, woff2, woff, ttf, otf; max 5 MB). Reference it in template HTML/CSS or document data as asset://<name>; it is embedded into the HTML and PDF at render time. Remote image URLs are not fetched, so upload images instead."
+    )]
+    fn upload_asset(
+        &self,
+        Parameters(request): Parameters<UploadAssetRequest>,
+    ) -> Result<Json<AssetSummary>, McpError> {
+        let bytes =
+            assets::decode_base64(&request.name, &request.data_base64).map_err(mcp_error)?;
+        self.store
+            .put_asset(&request.name, &bytes, request.replace)
+            .map(Json)
+            .map_err(mcp_error)
+    }
+
+    #[tool(description = "List uploaded assets with their asset:// references")]
+    fn list_assets(&self) -> Result<Json<AssetList>, McpError> {
+        self.store
+            .list_assets()
+            .map(|assets| Json(AssetList { assets }))
+            .map_err(mcp_error)
+    }
+
+    #[tool(description = "Delete an uploaded asset if no template or document references it")]
+    fn delete_asset(
+        &self,
+        Parameters(request): Parameters<AssetNameRequest>,
+    ) -> Result<Json<Deleted>, McpError> {
+        self.store.delete_asset(&request.name).map_err(mcp_error)?;
+        Ok(Json(Deleted {
+            id: request.name,
+            deleted: true,
+        }))
+    }
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct AssetList {
+    pub assets: Vec<AssetSummary>,
+}
+
+/// One-line outcome plus warnings, readable by agents that ignore structured content.
+fn report_summary(report: &PdfReport) -> String {
+    let mut summary = format!(
+        "PDF: {} page(s), {} link(s), {}/{} image(s), text check {}, {}.",
+        report.page_count,
+        report.links.len(),
+        report.images_found,
+        report.images_expected,
+        report.text_check.status,
+        if report.tagged { "tagged" } else { "untagged" }
+    );
+    if report.warnings.is_empty() {
+        summary.push_str(" All checks passed.");
+    } else {
+        summary.push_str(" Warnings:");
+        for warning in &report.warnings {
+            summary.push_str("\n- ");
+            summary.push_str(warning);
+        }
+    }
+    summary
 }
 
 #[tool_handler]
@@ -284,11 +402,16 @@ impl ServerHandler for DocumentMcpServer {
             env!("CARGO_PKG_VERSION"),
         ))
         .with_instructions(
-            "Use list_templates to show the visual template gallery. Create a document, then use \
-             open_document_editor to display its interactive editor. Drafts may be incomplete; \
-             required fields are checked when rendering. render_document returns the document itself \
-             as an HTML resource, not just a server path. Always present the attachment to the user; \
-             if the client supplies local_path, provide a clickable link to that local file.",
+            "Templates define fields, Handlebars HTML, CSS and page settings (size, margin, \
+             max_pages); documents hold JSON data for one template. Typical flow: get_template to \
+             learn the fields, create_document or update_document with the data, then render_pdf. \
+             Images and fonts must be uploaded with upload_asset and referenced as asset://<name>; \
+             the renderer has no network access. render_pdf returns a report: fix every warning \
+             (page budget, missing text, links or images) and render again. Use render_page_images \
+             to look at the printed pages. Drafts may be incomplete; required fields are checked \
+             when rendering. Use list_templates to show the visual gallery and \
+             open_document_editor for the interactive editor. Always present the rendered \
+             attachment to the user; if the client supplies local_path, give a clickable link.",
         )
     }
 

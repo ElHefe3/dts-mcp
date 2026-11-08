@@ -3,15 +3,21 @@ use serde_json::Value;
 
 use crate::{
     error::{AppError, Result},
-    model::{Document, FieldDefinition, FieldType, Template},
+    model::{Document, FieldDefinition, FieldType, PageSettings, Template},
 };
 
 pub fn render(template: &Template, document: &Document) -> Result<String> {
     validate_document(template, &document.data, true)?;
-    render_preview(template, &document.data)
+    render_html(template, &document.data, &document.name)
 }
 
 pub fn render_preview(template: &Template, data: &Value) -> Result<String> {
+    render_html(template, data, &template.name)
+}
+
+/// Produces one self-describing HTML file that renders identically on screen and in print:
+/// page geometry comes from `@page`, and print keeps backgrounds and colours exactly.
+fn render_html(template: &Template, data: &Value, title: &str) -> Result<String> {
     let mut context = data.as_object().cloned().unwrap_or_default();
     context.insert("document".to_string(), data.clone());
     let handlebars = Handlebars::new();
@@ -19,9 +25,90 @@ pub fn render_preview(template: &Template, data: &Value) -> Result<String> {
         .render_template(&template.render.html, &Value::Object(context))
         .map_err(|error| AppError::Invalid(format!("template rendering failed: {error}")))?;
     Ok(format!(
-        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<style>\n{}\n</style>\n</head>\n<body>\n{}\n</body>\n</html>\n",
-        template.render.css, body
+        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
+         <title>{title}</title>\n<style>\n{page}\n\
+         html {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}\n</style>\n\
+         <style>\n{css}\n</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n",
+        lang = escape_html(&template.lang),
+        title = escape_html(title),
+        page = page_css(&template.page),
+        css = template.render.css,
     ))
+}
+
+pub fn page_css(page: &PageSettings) -> String {
+    format!("@page {{ size: {}; margin: {}; }}", page.size, page.margin)
+}
+
+pub fn escape_html(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
+}
+
+fn validate_page(page: &PageSettings) -> Result<()> {
+    let mut parts = page.size.split_whitespace();
+    let size_ok = matches!(
+        parts.next().map(str::to_ascii_lowercase).as_deref(),
+        Some("a3" | "a4" | "a5" | "letter" | "legal")
+    ) && matches!(parts.next(), None | Some("portrait" | "landscape"))
+        && parts.next().is_none();
+    if !size_ok {
+        return Err(AppError::Invalid(format!(
+            "page.size must be A3, A4, A5, Letter or Legal, optionally with portrait/landscape; got '{}'",
+            page.size
+        )));
+    }
+    let lengths: Vec<&str> = page.margin.split_whitespace().collect();
+    let length_ok = |value: &&str| {
+        if *value == "0" {
+            return true;
+        }
+        ["mm", "cm", "in", "pt", "px"].iter().any(|unit| {
+            value.strip_suffix(unit).is_some_and(|number| {
+                !number.is_empty()
+                    && number
+                        .parse::<f32>()
+                        .is_ok_and(|n| (0.0..=200.0).contains(&n))
+            })
+        })
+    };
+    if lengths.is_empty() || lengths.len() > 4 || !lengths.iter().all(length_ok) {
+        return Err(AppError::Invalid(format!(
+            "page.margin must be 1-4 lengths in mm, cm, in, pt or px; got '{}'",
+            page.margin
+        )));
+    }
+    if page.max_pages == Some(0) {
+        return Err(AppError::Invalid(
+            "page.max_pages must be at least 1".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_lang(lang: &str) -> Result<()> {
+    let valid = (2..=35).contains(&lang.len())
+        && lang
+            .split('-')
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric()));
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::Invalid(format!(
+            "lang must be a language tag such as 'en' or 'de-DE'; got '{lang}'"
+        )))
+    }
 }
 
 pub fn validate_template(template: &Template) -> Result<()> {
@@ -45,6 +132,8 @@ pub fn validate_template(template: &Template) -> Result<()> {
     if template.render.html.trim().is_empty() {
         return Err(AppError::Invalid("template render.html is required".into()));
     }
+    validate_page(&template.page)?;
+    validate_lang(&template.lang)?;
     let preview_data = merge_defaults(&template.defaults, &template.preview_data)?;
     validate_document(template, &preview_data, false)?;
     Handlebars::new()

@@ -16,15 +16,19 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::{
+    assets,
     error::AppError,
     model::{Deleted, Document},
-    server::{CreateDocumentRequest, DocumentMcpServer, PreviewDocumentRequest},
+    server::{
+        CreateDocumentRequest, DocumentMcpServer, PreviewDocumentRequest, UploadAssetRequest,
+    },
     store::Store,
 };
 
 const APP_HTML: &str = include_str!("../web/dist/index.html");
 const SESSION_COOKIE: &str = "dts_session";
-const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+/// Large enough for a 5 MB asset after base64 expansion plus JSON framing.
+const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone)]
 struct WebState {
@@ -70,6 +74,8 @@ pub fn router(store: Arc<Store>, server: DocumentMcpServer, token: String) -> Ro
         .route("/api/documents/{id}/render", post(render_document))
         .route("/api/documents/{id}/pdf", post(render_pdf))
         .route("/api/preview", post(preview_document))
+        .route("/api/assets", get(list_assets).post(upload_asset))
+        .route("/api/assets/{name}", get(get_asset).delete(delete_asset))
         .route("/renders/{id}", get(rendered_document))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -281,6 +287,51 @@ async fn preview_document(
             .store
             .preview_document(&request.template_id, &request.data)?,
     )?))
+}
+
+async fn list_assets(State(state): State<Arc<WebState>>) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!({"assets": state.store.list_assets()?})))
+}
+
+async fn upload_asset(
+    State(state): State<Arc<WebState>>,
+    Json(request): Json<UploadAssetRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let bytes = assets::decode_base64(&request.name, &request.data_base64)?;
+    Ok(Json(serde_json::to_value(state.store.put_asset(
+        &request.name,
+        &bytes,
+        request.replace,
+    )?)?))
+}
+
+async fn get_asset(
+    State(state): State<Arc<WebState>>,
+    Path(name): Path<String>,
+) -> Result<Response, ApiError> {
+    let (mime_type, bytes) = state.store.get_asset(&name)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static(mime_type)),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn delete_asset(
+    State(state): State<Arc<WebState>>,
+    Path(name): Path<String>,
+) -> Result<Json<Deleted>, ApiError> {
+    state.store.delete_asset(&name)?;
+    Ok(Json(Deleted {
+        id: name,
+        deleted: true,
+    }))
 }
 
 async fn render_document(

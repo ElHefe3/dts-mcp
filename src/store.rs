@@ -8,13 +8,16 @@ use base64::Engine;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
+    assets,
     error::{AppError, Result},
+    inspect,
     model::{
-        Document, DocumentSummary, EditorState, GalleryTemplate, RenderedDocument, RenderedPdf,
-        RenderedPreview, Template, TemplateGallery, TemplateSummary,
+        AssetSummary, Document, DocumentSummary, EditorState, GalleryTemplate, PageImages,
+        PdfReport, RenderedDocument, RenderedPdf, RenderedPreview, Template, TemplateGallery,
+        TemplateSummary,
     },
     pdf::{self, PdfRenderer},
-    render,
+    raster, render,
 };
 
 pub struct Store {
@@ -29,6 +32,7 @@ impl Store {
             root.join("templates"),
             root.join("documents"),
             root.join("renders"),
+            root.join("assets"),
         ] {
             fs::create_dir_all(&directory).map_err(AppError::storage)?;
         }
@@ -89,7 +93,8 @@ impl Store {
                     name: template.name.clone(),
                     version: template.version.clone(),
                     description: template.description.clone(),
-                    preview_html: render::render_preview(template, &data)?,
+                    preview_html: self
+                        .inline_assets(&render::render_preview(template, &data)?, false)?,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -182,7 +187,7 @@ impl Store {
         let data = render::merge_defaults(&template.defaults, supplied)?;
         render::validate_document(&template, &data, false)?;
         Ok(RenderedPreview {
-            html: render::render_preview(&template, &data)?,
+            html: self.inline_assets(&render::render_preview(&template, &data)?, false)?,
         })
     }
 
@@ -214,7 +219,7 @@ impl Store {
     pub fn render_document(&self, id: &str) -> Result<RenderedDocument> {
         let document = self.get_document(id)?;
         let template = self.get_template(&document.template_id)?;
-        let html = render::render(&template, &document)?;
+        let html = self.inline_assets(&render::render(&template, &document)?, true)?;
         let path = self.root.join("renders").join(format!("{id}.html"));
         let _guard = self.write_lock.lock().map_err(AppError::storage)?;
         write_bytes(&path, html.as_bytes())?;
@@ -227,7 +232,7 @@ impl Store {
     }
 
     pub fn render_pdf(&self, id: &str) -> Result<RenderedPdf> {
-        self.render_pdf_with_renderer(id, &pdf::WkhtmltopdfRenderer::discover()?)
+        self.render_pdf_with_renderer(id, &pdf::ChromiumRenderer::discover())
     }
 
     pub fn render_pdf_with_renderer(
@@ -236,14 +241,23 @@ impl Store {
         renderer: &dyn PdfRenderer,
     ) -> Result<RenderedPdf> {
         let rendered = self.render_document(id)?;
+        let template = self.get_template(&rendered.template_id)?;
         let html_path = self.root.join("renders").join(format!("{id}.html"));
         let pdf_path = self.root.join("renders").join(format!("{id}.pdf"));
         let bytes = renderer.render(&html_path)?;
         if !bytes.starts_with(b"%PDF-") {
             return Err(AppError::storage("PDF renderer returned invalid PDF bytes"));
         }
-        let _guard = self.write_lock.lock().map_err(AppError::storage)?;
-        write_bytes(&pdf_path, &bytes)?;
+        {
+            let _guard = self.write_lock.lock().map_err(AppError::storage)?;
+            write_bytes(&pdf_path, &bytes)?;
+        }
+        let report = inspect::inspect(
+            &bytes,
+            &pdf_path,
+            &inspect::expectations(&rendered.html),
+            template.page.max_pages,
+        );
         Ok(RenderedPdf {
             document_id: rendered.document_id,
             template_id: rendered.template_id,
@@ -251,8 +265,117 @@ impl Store {
             filename: format!("{id}.pdf"),
             mime_type: pdf::MIME_TYPE.into(),
             resource_uri: format!("document://renders/{id}.pdf"),
+            report,
             pdf_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
         })
+    }
+
+    /// Renders a fresh PDF and returns PNG images of its first pages.
+    pub fn render_page_images(
+        &self,
+        id: &str,
+        dpi: Option<u32>,
+        max_pages: Option<u32>,
+    ) -> Result<(PageImages, Vec<Vec<u8>>)> {
+        let dpi = dpi.unwrap_or(raster::DEFAULT_DPI);
+        if !(36..=raster::MAX_DPI).contains(&dpi) {
+            return Err(AppError::Invalid(format!(
+                "dpi must be between 36 and {}",
+                raster::MAX_DPI
+            )));
+        }
+        let limit = max_pages
+            .unwrap_or(raster::MAX_PAGES)
+            .clamp(1, raster::MAX_PAGES);
+        let rendered = self.render_pdf(id)?;
+        let report: PdfReport = rendered.report;
+        let last_page = report.page_count.clamp(1, limit);
+        let images = raster::page_pngs(Path::new(&rendered.output_path), dpi, last_page)?;
+        Ok((
+            PageImages {
+                document_id: rendered.document_id,
+                dpi,
+                page_count: report.page_count,
+                rendered_pages: images.len() as u32,
+                report,
+            },
+            images,
+        ))
+    }
+
+    pub fn put_asset(&self, name: &str, bytes: &[u8], replace: bool) -> Result<AssetSummary> {
+        let mime_type = assets::validate_name(name)?;
+        assets::validate_content(name, mime_type, bytes)?;
+        let _guard = self.write_lock.lock().map_err(AppError::storage)?;
+        let path = self.asset_path(name);
+        if path.exists() && !replace {
+            return Err(AppError::AlreadyExists(format!(
+                "asset '{name}' already exists; pass replace=true to overwrite it"
+            )));
+        }
+        write_bytes(&path, bytes)?;
+        Ok(asset_summary(name, mime_type, bytes.len() as u64))
+    }
+
+    pub fn list_assets(&self) -> Result<Vec<AssetSummary>> {
+        let mut assets = Vec::new();
+        for entry in fs::read_dir(self.root.join("assets")).map_err(AppError::storage)? {
+            let entry = entry.map_err(AppError::storage)?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Ok(mime_type) = assets::validate_name(&name) {
+                let bytes = entry.metadata().map_err(AppError::storage)?.len();
+                assets.push(asset_summary(&name, mime_type, bytes));
+            }
+        }
+        assets.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(assets)
+    }
+
+    pub fn get_asset(&self, name: &str) -> Result<(&'static str, Vec<u8>)> {
+        let mime_type = assets::validate_name(name)?;
+        let path = self.asset_path(name);
+        if !path.is_file() {
+            return Err(not_found("asset", name));
+        }
+        Ok((mime_type, fs::read(path).map_err(AppError::storage)?))
+    }
+
+    /// Deletes an asset unless a template or document still references it.
+    pub fn delete_asset(&self, name: &str) -> Result<()> {
+        assets::validate_name(name)?;
+        let _guard = self.write_lock.lock().map_err(AppError::storage)?;
+        if !self.asset_path(name).is_file() {
+            return Err(not_found("asset", name));
+        }
+        let mut users = Vec::new();
+        for (kind, directory) in [("template", "templates"), ("document", "documents")] {
+            for entry in fs::read_dir(self.root.join(directory)).map_err(AppError::storage)? {
+                let path = entry.map_err(AppError::storage)?.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let text = fs::read_to_string(&path).map_err(AppError::storage)?;
+                if assets::references(&text).contains(name) {
+                    let id = path.file_stem().unwrap_or_default().to_string_lossy();
+                    users.push(format!("{kind} '{id}'"));
+                }
+            }
+        }
+        if !users.is_empty() {
+            return Err(AppError::InUse(format!(
+                "asset '{name}' is used by {}",
+                users.join(", ")
+            )));
+        }
+        fs::remove_file(self.asset_path(name)).map_err(AppError::storage)
+    }
+
+    fn inline_assets(&self, html: &str, strict: bool) -> Result<String> {
+        assets::inline(html, strict, |name| self.get_asset(name))
+    }
+
+    fn asset_path(&self, name: &str) -> PathBuf {
+        self.root.join("assets").join(name)
     }
 
     pub fn rendered_pdf_bytes(&self, id: &str) -> Result<Vec<u8>> {
@@ -293,6 +416,15 @@ impl Store {
     }
 }
 
+fn asset_summary(name: &str, mime_type: &str, bytes: u64) -> AssetSummary {
+    AssetSummary {
+        name: name.into(),
+        mime_type: mime_type.into(),
+        bytes,
+        uri: format!("{}{name}", assets::SCHEME),
+    }
+}
+
 fn not_found(kind: &str, id: &str) -> AppError {
     AppError::NotFound(format!("{kind} '{id}' was not found"))
 }
@@ -309,10 +441,16 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 }
 
 fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
-    let temporary = path.with_extension("tmp");
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = PathBuf::from(temporary);
     fs::write(&temporary, bytes).map_err(AppError::storage)?;
-    if path.exists() {
-        fs::remove_file(path).map_err(AppError::storage)?;
+    // rename replaces atomically on Unix; Windows needs the old file removed first.
+    if fs::rename(&temporary, path).is_err() {
+        if path.exists() {
+            fs::remove_file(path).map_err(AppError::storage)?;
+        }
+        fs::rename(&temporary, path).map_err(AppError::storage)?;
     }
-    fs::rename(&temporary, path).map_err(AppError::storage)
+    Ok(())
 }

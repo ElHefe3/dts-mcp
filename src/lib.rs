@@ -1,6 +1,9 @@
+pub mod assets;
 pub mod error;
+pub mod inspect;
 pub mod model;
 pub mod pdf;
+pub mod raster;
 pub mod render;
 pub mod server;
 pub mod store;

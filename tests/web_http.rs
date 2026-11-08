@@ -1,4 +1,4 @@
-use std::{process::Command, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     body::Body,
@@ -44,6 +44,8 @@ fn template() -> Template {
             html: "<h1>{{recipient}}</h1><p>{{message}}</p>".into(),
             css: "h1 { color: navy; }".into(),
         },
+        page: Default::default(),
+        lang: "en".into(),
     }
 }
 
@@ -176,9 +178,7 @@ async fn browser_api_supports_the_complete_visual_workflow() {
     assert_eq!(status, StatusCode::OK);
     assert!(html.as_str().unwrap().contains("Saved recipient"));
 
-    let renderer = std::env::var("DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF")
-        .unwrap_or_else(|_| "wkhtmltopdf".to_string());
-    if Command::new(&renderer).arg("--version").output().is_ok() {
+    if document_templating_mcp::pdf::ChromiumRenderer::discover().is_available() {
         let (status, _, pdf) = request(
             &app,
             "POST",

@@ -6,6 +6,9 @@ use std::{
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+const PNG_BASE64: &str =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
 struct Client {
     child: Child,
     stdin: ChildStdin,
@@ -85,7 +88,7 @@ fn serves_the_complete_template_workflow_over_stdio() {
 
     let tools = client.request("tools/list", json!({}));
     let tool_list = tools["tools"].as_array().unwrap();
-    assert_eq!(tool_list.len(), 14);
+    assert_eq!(tool_list.len(), 18);
     let gallery_tool = tool_list
         .iter()
         .find(|tool| tool["name"] == "list_templates")
@@ -168,12 +171,20 @@ fn serves_the_complete_template_workflow_over_stdio() {
         json!({"uri": "document://renders/welcome.html"}),
     );
     assert_eq!(resource["contents"][0]["text"], html);
-    let renderer = std::env::var_os("DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF")
-        .unwrap_or_else(|| "wkhtmltopdf".into());
-    if Command::new(renderer).arg("--version").output().is_ok() {
+    if document_templating_mcp::pdf::ChromiumRenderer::discover().is_available() {
         let pdf = client.call_tool("render_pdf", json!({"id": "welcome"}));
         assert_eq!(pdf["structuredContent"]["filename"], "welcome.pdf");
         assert_eq!(pdf["structuredContent"]["mime_type"], "application/pdf");
+        assert_eq!(pdf["structuredContent"]["report"]["page_count"], 1);
+        assert_eq!(pdf["structuredContent"]["report"]["tagged"], true);
+        assert_eq!(pdf["structuredContent"]["report"]["title"], "Welcome");
+        assert!(pdf["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["text"]
+                .as_str()
+                .is_some_and(|text| text.starts_with("PDF: 1 page(s)"))));
         let attachment = pdf["content"]
             .as_array()
             .unwrap()
@@ -190,6 +201,16 @@ fn serves_the_complete_template_workflow_over_stdio() {
         );
         assert_eq!(resource["contents"][0]["mimeType"], "application/pdf");
     }
+    let uploaded = client.call_tool(
+        "upload_asset",
+        json!({"name": "dot.png", "data_base64": PNG_BASE64}),
+    );
+    assert_eq!(uploaded["structuredContent"]["uri"], "asset://dot.png");
+    let assets = client.call_tool("list_assets", json!({}));
+    assert_eq!(
+        assets["structuredContent"]["assets"][0]["mime_type"],
+        "image/png"
+    );
     assert!(directory.path().join("templates/note.json").is_file());
     assert!(directory.path().join("documents/welcome.json").is_file());
 }

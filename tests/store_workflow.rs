@@ -32,6 +32,8 @@ fn template() -> Template {
             html: "<h1>{{recipient}}</h1><p>{{message}}</p>".into(),
             css: "h1 { color: navy; }".into(),
         },
+        page: Default::default(),
+        lang: "en".into(),
     }
 }
 
