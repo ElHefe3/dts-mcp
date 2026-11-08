@@ -5,7 +5,7 @@ Host: `lab-compute` / `lab-pta-03` / `192.168.1.115`.
 Server directory: `/home/kreef/projects/document-templating-mcp`.
 Docker Compose service: `documents` (container `document-templating-mcp-documents-1`).
 Local server endpoint: `http://127.0.0.1:8093/mcp`.
-Document storage: Docker named volume `document-mcp_document-data`.
+Document storage: Docker named volume `document-templating-mcp_document-data`.
 
 The service requires a bearer token stored in a mode-0600 `.env` on the server.
 It binds only to loopback. The client bridge opens an encrypted SSH tunnel and

@@ -12,8 +12,11 @@ services:
     volumes:
       - document-data:/data
     read_only: true
+    # Reaps Chromium helper processes.
+    init: true
     tmpfs:
-      - /tmp:size=16m,noexec,nosuid
+      # Chromium profile, shared memory and print output for each render.
+      - /tmp:size=512m,noexec,nosuid
     security_opt:
       - no-new-privileges:true
 

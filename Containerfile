@@ -13,8 +13,11 @@ COPY --from=frontend /src/web/dist/ ./web/dist/
 RUN cargo build --release --locked
 
 FROM docker.io/library/debian:bookworm-slim AS runtime
+# chromium renders PDFs; poppler-utils provides pdftotext (text-layer check) and
+# pdftoppm (page previews); fonts-dejavu-core covers glyphs Liberation lacks.
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates curl fonts-liberation wkhtmltopdf \
+    && apt-get install --yes --no-install-recommends ca-certificates curl \
+       chromium poppler-utils fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 documents \
     && useradd --uid 10001 --gid documents --no-create-home documents \
@@ -29,8 +32,11 @@ COPY --from=build /src/target/release/document-templating-mcp /usr/local/bin/doc
 ENV DOCUMENT_TEMPLATING_MCP_TRANSPORT=http \
     DOCUMENT_TEMPLATING_MCP_HTTP_ADDR=0.0.0.0:8080 \
     DOCUMENT_TEMPLATING_MCP_DATA_DIR=/data \
-    DOCUMENT_TEMPLATING_MCP_WKHTMLTOPDF=/usr/bin/wkhtmltopdf \
-    HOME=/tmp
+    DOCUMENT_TEMPLATING_MCP_CHROMIUM=/usr/bin/chromium \
+    DOCUMENT_TEMPLATING_MCP_CHROMIUM_NO_SANDBOX=1 \
+    HOME=/tmp \
+    XDG_CONFIG_HOME=/tmp/.config \
+    XDG_CACHE_HOME=/tmp/.cache
 USER documents
 VOLUME ["/data"]
 EXPOSE 8080
