@@ -1,0 +1,66 @@
+<div class="container">
+  <aside class="left">
+    {{#if photo}}
+    <div class="img-container">
+      <img id="photo" src="{{photo}}" alt="Portrait of {{name}}">
+    </div>
+    {{/if}}
+
+    <h2>Contact</h2>
+    {{#if github}}<div class="icon-container"><p><a href="{{github}}">{{github}}</a></p></div>{{/if}}
+    {{#if forgejo}}<div class="icon-container"><p><a href="{{forgejo}}">{{forgejo}}</a></p></div>{{/if}}
+    {{#if linkedin}}<div class="icon-container"><p><a href="{{linkedin}}">{{linkedin}}</a></p></div>{{/if}}
+    {{#if email}}<div class="icon-container"><p><a href="mailto:{{email}}">{{email}}</a></p></div>{{/if}}
+    {{#if phone}}<div class="icon-container"><p>{{phone}}</p></div>{{/if}}
+    {{#if location}}<div class="icon-container"><p>{{location}}</p></div>{{/if}}
+
+    {{#if languages}}
+    <h2>Languages</h2>
+    <ul>{{#each languages}}<li>{{this}}</li>{{/each}}</ul>
+    {{/if}}
+
+    {{#if skills}}
+    <h2>Skills</h2>
+    <ul>{{#each skills}}<li>{{this}}</li>{{/each}}</ul>
+    {{/if}}
+
+    {{#if strengths}}
+    <h2>Strengths</h2>
+    <ul>{{#each strengths}}<li>{{this}}</li>{{/each}}</ul>
+    {{/if}}
+  </aside>
+
+  <main class="right">
+    <h1>{{name}}</h1>
+    <p class="title"><strong>{{title}}</strong></p>
+
+    {{#if summary}}
+    <h2>Summary</h2>
+    <p>{{summary}}</p>
+    {{/if}}
+
+    {{#if experience}}
+    <h2>Experience</h2>
+    {{#each experience}}
+    <h3>{{company}}, {{role}} <span class="date">{{dates}}</span></h3>
+    <ul>{{#each bullets}}<li>{{this}}</li>{{/each}}</ul>
+    {{/each}}
+    {{/if}}
+
+    {{#if projects}}
+    <h2>Personal Projects</h2>
+    <ul>{{#each projects}}<li><strong>{{name}}</strong> - {{description}}</li>{{/each}}</ul>
+    {{/if}}
+
+    {{#if education}}
+    <h2>Education</h2>
+    <h3>{{education.institution}} <span class="date">{{education.dates}}</span></h3>
+    <p>{{education.qualification}}</p>
+    {{/if}}
+
+    {{#if activities}}
+    <h2>Additional Activities</h2>
+    <p>{{activities}}</p>
+    {{/if}}
+  </main>
+</div>

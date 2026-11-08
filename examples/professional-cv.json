@@ -1,0 +1,247 @@
+{
+  "defaults": {
+    "activities": "",
+    "education": {
+      "dates": "",
+      "institution": "",
+      "qualification": ""
+    },
+    "email": "",
+    "experience": [],
+    "forgejo": "",
+    "github": "",
+    "languages": [],
+    "linkedin": "",
+    "location": "",
+    "name": "",
+    "phone": "",
+    "photo": "",
+    "projects": [],
+    "skills": [],
+    "strengths": [],
+    "summary": "",
+    "title": "Full Stack Developer"
+  },
+  "description": "A concise two-column CV with editable experience and personal projects.",
+  "id": "professional-cv",
+  "name": "Professional CV",
+  "preview_data": {
+    "name": "Example Developer",
+    "summary": "Software developer focused on maintainable systems and practical delivery."
+  },
+  "render": {
+    "css": "body {\n  font-family: \"Calibri\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  background-color: #fff;\n  color: #222;\n  margin: 20px auto;\n  padding: 0 20px;\n  box-sizing: border-box;\n  max-width: 1000px;\n  font-size: 12px;\n  line-height: 1.35;\n}\n\n.container {\n  display: table;\n  width: 100%;\n}\n\n.left,\n.right {\n  display: table-cell;\n  vertical-align: top;\n}\n\n.left {\n  width: 30%;\n  padding-right: 10px;\n}\n\n.right {\n  width: 70%;\n  padding-left: 10px;\n}\n\nh1 {\n  font-size: 24px;\n  color: #333;\n  margin-bottom: 8px;\n}\n\nh2 {\n  font-size: 14px;\n  color: #4a4a4a;\n  border-bottom: 1px solid #ccc;\n  padding-bottom: 2px;\n  margin-top: 20px;\n  margin-bottom: 8px;\n}\n\nh3 {\n  font-size: 12px;\n  color: #222;\n  margin: 8px 0 4px;\n}\n\n.date {\n  float: right;\n  font-style: italic;\n  color: #666;\n}\n\np,\nli {\n  margin: 4px 0;\n}\n\nul {\n  padding-left: 16px;\n  margin: 4px 0 10px;\n}\n\na {\n  color: #3c6e71;\n  text-decoration: none;\n}\n\nimg#photo {\n  width: 70%;\n  border-radius: 8px;\n}\n\n.icon-container {\n  display: inline-block;\n  width: 100%;\n  margin-bottom: 6px;\n}\n\n.icon-container .icon {\n  vertical-align: middle;\n  width: 1rem;\n  margin-right: 0.3rem;\n}\n\n.icon-container p {\n  display: inline;\n  vertical-align: middle;\n  margin: 0;\n}\n\n@media screen and (max-width: 720px) {\n  body {\n    margin: 0;\n    padding: 16px;\n    max-width: none;\n    font-size: 14px;\n    line-height: 1.45;\n  }\n\n  .container {\n    display: flex;\n    flex-direction: column;\n    width: 100%;\n  }\n\n  .left,\n  .right {\n    display: block;\n    width: auto;\n    padding: 0;\n  }\n\n  .right {\n    order: 1;\n  }\n\n  .left {\n    order: 2;\n  }\n\n  h1 {\n    font-size: 28px;\n    line-height: 1.15;\n    margin-top: 0;\n  }\n\n  .date {\n    display: block;\n    float: none;\n    margin-top: 2px;\n  }\n\n  .img-container {\n    margin-top: 24px;\n    text-align: center;\n  }\n\n  img#photo {\n    width: 180px;\n    max-width: 60%;\n  }\n\n  .icon-container {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n  }\n\n  .icon-container p {\n    display: block;\n    overflow-wrap: anywhere;\n  }\n}\n",
+    "html": "<div class=\"container\">\n  <aside class=\"left\">\n    {{#if photo}}\n    <div class=\"img-container\">\n      <img id=\"photo\" src=\"{{photo}}\" alt=\"Portrait of {{name}}\">\n    </div>\n    {{/if}}\n\n    <h2>Contact</h2>\n    {{#if github}}<div class=\"icon-container\"><p><a href=\"{{github}}\">{{github}}</a></p></div>{{/if}}\n    {{#if forgejo}}<div class=\"icon-container\"><p><a href=\"{{forgejo}}\">{{forgejo}}</a></p></div>{{/if}}\n    {{#if linkedin}}<div class=\"icon-container\"><p><a href=\"{{linkedin}}\">{{linkedin}}</a></p></div>{{/if}}\n    {{#if email}}<div class=\"icon-container\"><p><a href=\"mailto:{{email}}\">{{email}}</a></p></div>{{/if}}\n    {{#if phone}}<div class=\"icon-container\"><p>{{phone}}</p></div>{{/if}}\n    {{#if location}}<div class=\"icon-container\"><p>{{location}}</p></div>{{/if}}\n\n    {{#if languages}}\n    <h2>Languages</h2>\n    <ul>{{#each languages}}<li>{{this}}</li>{{/each}}</ul>\n    {{/if}}\n\n    {{#if skills}}\n    <h2>Skills</h2>\n    <ul>{{#each skills}}<li>{{this}}</li>{{/each}}</ul>\n    {{/if}}\n\n    {{#if strengths}}\n    <h2>Strengths</h2>\n    <ul>{{#each strengths}}<li>{{this}}</li>{{/each}}</ul>\n    {{/if}}\n  </aside>\n\n  <main class=\"right\">\n    <h1>{{name}}</h1>\n    <p class=\"title\"><strong>{{title}}</strong></p>\n\n    {{#if summary}}\n    <h2>Summary</h2>\n    <p>{{summary}}</p>\n    {{/if}}\n\n    {{#if experience}}\n    <h2>Experience</h2>\n    {{#each experience}}\n    <h3>{{company}}, {{role}} <span class=\"date\">{{dates}}</span></h3>\n    <ul>{{#each bullets}}<li>{{this}}</li>{{/each}}</ul>\n    {{/each}}\n    {{/if}}\n\n    {{#if projects}}\n    <h2>Personal Projects</h2>\n    <ul>{{#each projects}}<li><strong>{{name}}</strong> - {{description}}</li>{{/each}}</ul>\n    {{/if}}\n\n    {{#if education}}\n    <h2>Education</h2>\n    <h3>{{education.institution}} <span class=\"date\">{{education.dates}}</span></h3>\n    <p>{{education.qualification}}</p>\n    {{/if}}\n\n    {{#if activities}}\n    <h2>Additional Activities</h2>\n    <p>{{activities}}</p>\n    {{/if}}\n  </main>\n</div>\n"
+  },
+  "schema_version": 1,
+  "sections": [
+    {
+      "description": "",
+      "fields": [
+        {
+          "id": "name",
+          "label": "Full name",
+          "path": "name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "id": "title",
+          "label": "Professional title",
+          "path": "title",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "id": "summary",
+          "label": "Summary",
+          "path": "summary",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "id": "location",
+          "label": "Location",
+          "path": "location",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "email",
+          "label": "Email",
+          "path": "email",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "phone",
+          "label": "Phone",
+          "path": "phone",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "github",
+          "label": "GitHub",
+          "path": "github",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "forgejo",
+          "label": "Forgejo",
+          "path": "forgejo",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "linkedin",
+          "label": "LinkedIn",
+          "path": "linkedin",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "id": "profile",
+      "label": "Profile and contact"
+    },
+    {
+      "description": "",
+      "fields": [
+        {
+          "id": "skills",
+          "label": "Skills",
+          "path": "skills",
+          "required": false,
+          "type": "string_list"
+        },
+        {
+          "id": "strengths",
+          "label": "Strengths",
+          "path": "strengths",
+          "required": false,
+          "type": "string_list"
+        },
+        {
+          "id": "languages",
+          "label": "Languages",
+          "path": "languages",
+          "required": false,
+          "type": "string_list"
+        }
+      ],
+      "id": "skills",
+      "label": "Skills and languages"
+    },
+    {
+      "description": "",
+      "fields": [
+        {
+          "fields": [
+            {
+              "id": "company",
+              "label": "Employer",
+              "path": "company",
+              "required": false,
+              "type": "text"
+            },
+            {
+              "id": "role",
+              "label": "Role",
+              "path": "role",
+              "required": false,
+              "type": "text"
+            },
+            {
+              "id": "dates",
+              "label": "Dates",
+              "path": "dates",
+              "required": false,
+              "type": "text"
+            },
+            {
+              "id": "bullets",
+              "label": "Responsibilities",
+              "path": "bullets",
+              "required": false,
+              "type": "string_list"
+            }
+          ],
+          "id": "experience",
+          "label": "Employment",
+          "path": "experience",
+          "required": false,
+          "type": "object_list"
+        }
+      ],
+      "id": "experience",
+      "label": "Experience"
+    },
+    {
+      "description": "",
+      "fields": [
+        {
+          "fields": [
+            {
+              "id": "name",
+              "label": "Project",
+              "path": "name",
+              "required": false,
+              "type": "text"
+            },
+            {
+              "id": "description",
+              "label": "Description",
+              "path": "description",
+              "required": false,
+              "type": "textarea"
+            }
+          ],
+          "id": "projects",
+          "label": "Projects",
+          "path": "projects",
+          "required": false,
+          "type": "object_list"
+        }
+      ],
+      "id": "projects",
+      "label": "Personal projects"
+    },
+    {
+      "description": "",
+      "fields": [
+        {
+          "id": "education-institution",
+          "label": "Institution",
+          "path": "education.institution",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "education-qualification",
+          "label": "Qualification",
+          "path": "education.qualification",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "education-dates",
+          "label": "Dates",
+          "path": "education.dates",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "id": "activities",
+          "label": "Additional activities",
+          "path": "activities",
+          "required": false,
+          "type": "textarea"
+        }
+      ],
+      "id": "education",
+      "label": "Education and activities"
+    }
+  ],
+  "version": "1.0.0"
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "ticket-draft",
+  "name": "Something good",
+  "template_id": "support-ticket",
+  "data": {
+    "title": "Something good",
+    "category": "Service request",
+    "priority": "High",
+    "description": "A good something",
+    "expected": "Really good",
+    "requester": "Kobus",
+    "assignee": "",
+    "status": "In progress",
+    "due_date": "2027-01-01",
+    "reference_url": ""
+  }
+}

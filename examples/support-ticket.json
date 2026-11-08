@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "support-ticket",
+  "name": "Support ticket",
+  "version": "1.0.0",
+  "description": "A reusable form for a bug, issue, or service request.",
+  "sections": [
+    {"id":"issue","label":"Ticket details","fields":[
+      {"id":"title","path":"title","label":"Title","type":"text","required":true},
+      {"id":"category","path":"category","label":"Category","type":"text"},
+      {"id":"description","path":"description","label":"Description","type":"textarea","required":true},
+      {"id":"expected","path":"expected","label":"Expected outcome","type":"textarea"}
+    ]},
+    {"id":"tracking","label":"Ownership and tracking","fields":[
+      {"id":"requester","path":"requester","label":"Requested by","type":"text","required":true},
+      {"id":"assignee","path":"assignee","label":"Assigned to","type":"text"},
+      {"id":"priority","path":"priority","label":"Priority","type":"text","required":true},
+      {"id":"status","path":"status","label":"Status","type":"text","required":true},
+      {"id":"due_date","path":"due_date","label":"Due date","type":"text"},
+      {"id":"reference_url","path":"reference_url","label":"Related link","type":"url"}
+    ]}
+  ],
+  "defaults":{"title":"","category":"Issue","description":"","expected":"","requester":"","assignee":"","priority":"Medium","status":"Open","due_date":"","reference_url":""},
+  "preview_data":{"title":"Document preview does not refresh","description":"After editing a field, the preview still shows the previous value.","expected":"The preview updates with the latest field values.","requester":"Example requester","assignee":"Support team","priority":"Medium","status":"Open"},
+  "render":{
+    "html":"<main><header><p class=\"eyebrow\">SUPPORT TICKET · {{category}}</p><h1>{{title}}</h1><p class=\"badges\">{{status}} · {{priority}} priority</p></header><dl><div><dt>Requested by</dt><dd>{{requester}}</dd></div><div><dt>Assigned to</dt><dd>{{#if assignee}}{{assignee}}{{else}}Unassigned{{/if}}</dd></div>{{#if due_date}}<div><dt>Due date</dt><dd>{{due_date}}</dd></div>{{/if}}</dl><section><h2>Description</h2><p class=\"multiline\">{{description}}</p></section>{{#if expected}}<section><h2>Expected outcome</h2><p class=\"multiline\">{{expected}}</p></section>{{/if}}{{#if reference_url}}<section><h2>Related link</h2><p>{{reference_url}}</p></section>{{/if}}</main>",
+    "css":"body{margin:0;background:#f4f5f7;color:#202735;font:15px/1.6 system-ui,sans-serif}main{max-width:760px;margin:40px auto;background:white;padding:40px;border-radius:16px}header{border-bottom:2px solid #e6e9ee;padding-bottom:20px}.eyebrow,dt{font-size:12px;color:#586476;letter-spacing:.06em}h1{font-size:30px;line-height:1.2;margin:12px 0}h2{font-size:17px}dl{display:flex;flex-wrap:wrap;gap:32px;margin:24px 0}dd{margin:4px 0}.badges{color:#465569}.multiline{white-space:pre-wrap}section{margin-top:28px}p{overflow-wrap:anywhere}@media(max-width:600px){main{margin:0;padding:24px;border-radius:0}}@media print{body{background:white}main{margin:0;padding:0}}"
+  }
+}
