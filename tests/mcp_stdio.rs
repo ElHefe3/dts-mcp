@@ -148,6 +148,8 @@ fn serves_the_complete_template_workflow_over_stdio() {
             "data": {"title": "Hello", "body": "Reusable templates work."}
         }),
     );
+    let listed = client.call_tool("list_documents", json!({}));
+    assert_eq!(listed["structuredContent"]["documents"][0]["id"], "welcome");
     let rendered = client.call_tool("render_document", json!({"id": "welcome"}));
     let html = rendered["structuredContent"]["html"].as_str().unwrap();
     assert!(html.contains("<h1>Hello</h1>"));

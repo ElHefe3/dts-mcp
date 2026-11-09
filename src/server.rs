@@ -195,8 +195,12 @@ impl DocumentMcpServer {
     }
 
     #[tool(description = "List saved documents and their template references")]
-    fn list_documents(&self) -> Result<Json<Vec<DocumentSummary>>, McpError> {
-        self.store.list_documents().map(Json).map_err(mcp_error)
+    fn list_documents(&self) -> Result<Json<DocumentList>, McpError> {
+        // MCP structured content must be a JSON object, not a bare array.
+        self.store
+            .list_documents()
+            .map(|documents| Json(DocumentList { documents }))
+            .map_err(mcp_error)
     }
 
     #[tool(description = "Get a saved document and its structured data")]
@@ -358,6 +362,11 @@ impl DocumentMcpServer {
             deleted: true,
         }))
     }
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct DocumentList {
+    pub documents: Vec<DocumentSummary>,
 }
 
 #[derive(Debug, serde::Serialize, schemars::JsonSchema)]
