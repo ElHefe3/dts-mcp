@@ -87,21 +87,36 @@ UTF-8 local file, and reopened it through the advertised MCP resource template.
 
 ## PDF delivery
 
-`render_pdf` uses the same wkhtmltopdf 0.12.6 pipeline and render arguments as
-`cv-studio`: local-file access, print media, internal/external
-links, 300-DPI output, and outlines. The runtime image includes wkhtmltopdf and
-Liberation fonts. The tool returns an `application/pdf` embedded resource, and
-`/renders/{id}.pdf` provides the authenticated browser download.
+Since 9 November 2026 `render_pdf` prints with headless Chromium (Debian's
+`chromium` package) instead of wkhtmltopdf. The Debian wkhtmltopdf build was
+compiled against unpatched Qt: it ignored print media, link and outline flags,
+garbled non-ASCII text extraction and could not lay out CSS grid. Chromium runs
+inside the read-only container with `--no-sandbox`
+(`DOCUMENT_TEMPLATING_MCP_CHROMIUM_NO_SANDBOX=1`), a fresh profile in the 512 MB
+`/tmp` tmpfs and no network access; Compose runs an init process to reap its
+helper processes. poppler-utils provides `pdftotext` for the text-layer check and
+`pdftoppm` for `render_page_images`. The image is about 800 MB.
 
-The SSH bridge decodes the PDF resource and saves exact binary bytes to `output/`.
-The Professional CV template uses a print-safe table layout and real contact links.
-Its stored template lives in the Docker volume; the reference copy is
-`examples/professional-cv.json`.
+Every `render_pdf` returns a `report` (pages, text layer, links, images, tags,
+title, warnings). `/renders/{id}.pdf` provides the authenticated browser download,
+and the SSH bridge saves the exact PDF bytes to `output/`.
 
-Live Scout24 validation passed: one A4 page, correct embedded photo, no column
-overlap, selectable name/CV text, and clickable GitHub, LinkedIn, and email links.
-The MCP attachment, resource read-back, and downloaded local PDF were byte-identical.
+Chromium prints CSS at its true size, whereas wkhtmltopdf shrank the 1000 px CV
+layout to about 72%. The Professional CV template (stored in the Docker volume,
+reference copy `examples/professional-cv.json`, version 1.1.0) therefore carries
+`@media print` sizing, A4 with 12 mm margins and `max_pages: 1`. The version
+before this change was saved locally before the update.
 
+Live validation on 9 November 2026: all six stored documents, including the three
+Professional CV documents, rendered on one A4 page with the text check passed and
+no warnings. The Scout24 CV kept its embedded photo and clickable GitHub, LinkedIn
+and email links, with a tagged PDF titled after the document.
+
+Rollback: before deployment the data volume was archived to
+`~/backups/document-templating-mcp/data-20261109T051241.tgz` and the previous
+image tagged `localhost/document-templating-mcp:pre-chromium-20261109T051241`.
+To roll back, retag that image as `:latest`, restore the previous `compose.yaml`
+from the same backup folder and run `docker compose up -d` without `--build`.
 Verification commands:
 
 ```powershell
