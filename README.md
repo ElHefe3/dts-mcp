@@ -129,6 +129,27 @@ warning in the PDF report, not an error. `lang` sets `<html lang>`.
 
 Field types are `text`, `textarea`, `rich_text`, `url`, `string_list`, and `object_list`. An `object_list` field defines its nested fields in `fields`. Handlebars escapes ordinary `{{value}}` substitutions; use triple braces only for intentionally trusted HTML such as rich text.
 
+## Template validation and limits
+
+Templates reject duplicate section IDs, sibling field IDs, and effective field
+paths before they are stored. A field can have nested definitions only when its
+type is `object_list`. Required-field errors name the JSON path, while drafts
+may still omit required values until final rendering.
+
+The server rejects rather than truncates a template or document data payload
+above 256 KiB, a template with more than 32 sections or 128 fields, a list with
+more than 100 items, and preview or rendered HTML above 1 MiB. These limits
+apply through both MCP and HTTP because they are checked by the shared store.
+
+Template validation parses and renders the Handlebars body with defaults, so
+syntax and registered-helper errors are errors. There is no static placeholder
+linter: paths can be dynamic and normal Handlebars scopes such as `#if`, `#each`
+and `../` are supported. A missing value therefore renders as Handlebars
+normally does rather than producing a false validation failure. `{{value}}`
+always escapes data; `{{{value}}}` deliberately emits trusted HTML and should
+only be used for content the template author trusts (for example, rich text
+that has been sanitized before it reaches the server).
+
 Create a document with `create_document`:
 
 ```json
