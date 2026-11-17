@@ -1,0 +1,9 @@
+{
+  "id": "inline-cv",
+  "name": "Inline CV editor",
+  "version": "1.0.0",
+  "api_version": 1,
+  "contributions": [{"id": "inline-fields", "label": "Edit CV text in preview", "kind": "editor"}],
+  "permissions": ["read_document", "write_document"],
+  "entrypoint": {"runtime": "builtin", "handler": "inline_cv"}
+}

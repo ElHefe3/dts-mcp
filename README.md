@@ -4,7 +4,7 @@ A local-first Model Context Protocol server for reusable document templates and 
 
 Project work is tracked in [docs/tracker](docs/tracker/README.md).
 
-The [DTS plugin manifest](docs/plugin-manifest.md) defines metadata for future in-app extensions.
+The [DTS plugin API](docs/plugin-development.md) supports local extension packages with host-managed permissions, enablement and workspace contributions.
 
 ## Features
 

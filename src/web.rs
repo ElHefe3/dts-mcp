@@ -19,6 +19,7 @@ use crate::{
     assets,
     error::AppError,
     model::{Deleted, Document},
+    plugins::{PluginImport, PluginManager},
     server::{
         CreateDocumentRequest, DocumentMcpServer, PreviewDocumentRequest, UploadAssetRequest,
     },
@@ -33,6 +34,7 @@ const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 #[derive(Clone)]
 struct WebState {
     store: Arc<Store>,
+    plugins: Arc<PluginManager>,
     token: Arc<str>,
 }
 
@@ -50,8 +52,12 @@ pub async fn serve(store: Store, address: SocketAddr, token: String) -> anyhow::
 }
 
 pub fn router(store: Arc<Store>, server: DocumentMcpServer, token: String) -> Router {
+    let plugins = Arc::new(
+        PluginManager::open(store.plugins_dir()).expect("plugin directory must be available"),
+    );
     let state = Arc::new(WebState {
         store,
+        plugins,
         token: Arc::from(token),
     });
     let mcp_service = StreamableHttpService::new(
@@ -64,6 +70,18 @@ pub fn router(store: Arc<Store>, server: DocumentMcpServer, token: String) -> Ro
     );
     let protected_api = Router::new()
         .route("/api/templates", get(list_templates))
+        .route("/api/plugins", get(list_plugins))
+        .route("/api/plugins/{id}", axum::routing::put(set_plugin_enabled))
+        .route("/api/plugin-contributions", get(list_plugin_contributions))
+        .route(
+            "/api/documents/{id}/plugins/{plugin_id}/{contribution_id}",
+            post(invoke_document_action),
+        )
+        .route("/api/plugin-import", post(import_document))
+        .route(
+            "/api/documents/{id}/plugin-export/{plugin_id}/{contribution_id}",
+            get(export_document),
+        )
         .route("/api/documents", get(list_documents).post(create_document))
         .route(
             "/api/documents/{id}",
@@ -226,6 +244,95 @@ async fn logout() -> Response {
 
 async fn list_templates(State(state): State<Arc<WebState>>) -> Result<Json<Value>, ApiError> {
     Ok(Json(serde_json::to_value(state.store.template_gallery()?)?))
+}
+
+async fn list_plugins(State(state): State<Arc<WebState>>) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!({"plugins": state.plugins.list()?})))
+}
+
+#[derive(Deserialize)]
+struct PluginEnabledRequest {
+    enabled: bool,
+}
+
+async fn set_plugin_enabled(
+    State(state): State<Arc<WebState>>,
+    Path(id): Path<String>,
+    Json(request): Json<PluginEnabledRequest>,
+) -> Result<Json<Value>, ApiError> {
+    state.plugins.set_enabled(&id, request.enabled)?;
+    Ok(Json(json!({"id": id, "enabled": request.enabled})))
+}
+
+async fn list_plugin_contributions(
+    State(state): State<Arc<WebState>>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(
+        json!({"contributions": state.plugins.contributions()?}),
+    ))
+}
+
+async fn invoke_document_action(
+    State(state): State<Arc<WebState>>,
+    Path((id, plugin_id, contribution_id)): Path<(String, String, String)>,
+) -> Result<Json<Document>, ApiError> {
+    Ok(Json(state.plugins.invoke_document_action(
+        &state.store,
+        &plugin_id,
+        &contribution_id,
+        &id,
+    )?))
+}
+
+#[derive(Deserialize)]
+struct PluginImportRequest {
+    plugin_id: String,
+    contribution_id: String,
+    id: String,
+    name: String,
+    template_id: String,
+    text: String,
+}
+
+async fn import_document(
+    State(state): State<Arc<WebState>>,
+    Json(request): Json<PluginImportRequest>,
+) -> Result<Json<Document>, ApiError> {
+    Ok(Json(state.plugins.import_text(
+        &state.store,
+        &request.plugin_id,
+        &request.contribution_id,
+        PluginImport {
+            id: request.id,
+            name: request.name,
+            template_id: request.template_id,
+            text: request.text,
+        },
+    )?))
+}
+
+async fn export_document(
+    State(state): State<Arc<WebState>>,
+    Path((id, plugin_id, contribution_id)): Path<(String, String, String)>,
+) -> Result<Response, ApiError> {
+    let export = state
+        .plugins
+        .export_text(&state.store, &plugin_id, &contribution_id, &id)?;
+    Ok((
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(&export.mime_type).map_err(AppError::storage)?,
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!("attachment; filename=\"{}\"", export.filename))
+                    .map_err(AppError::storage)?,
+            ),
+        ],
+        export.content,
+    )
+        .into_response())
 }
 
 async fn list_documents(State(state): State<Arc<WebState>>) -> Result<Json<Value>, ApiError> {

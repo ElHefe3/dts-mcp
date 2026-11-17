@@ -1,0 +1,13 @@
+{
+  "id": "cv-template-pack",
+  "name": "CV template pack",
+  "version": "1.0.0",
+  "api_version": 1,
+  "contributions": [
+    {"id": "professional-cv", "label": "Professional CV", "kind": "template_pack"},
+    {"id": "required-contact", "label": "CV contact validation", "kind": "validation_rule"},
+    {"id": "render-notice", "label": "CV render notice", "kind": "render_hook"}
+  ],
+  "permissions": ["read_document"],
+  "entrypoint": {"runtime": "builtin", "handler": "cv_template_pack"}
+}

@@ -10,5 +10,6 @@
       "kind": "document_action"
     }
   ],
-  "permissions": ["read_document", "write_document"]
+  "permissions": ["read_document", "write_document"],
+  "entrypoint": {"runtime": "builtin", "handler": "duplicate_draft"}
 }

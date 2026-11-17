@@ -1,0 +1,12 @@
+{
+  "id": "text-io",
+  "name": "Plain text import and export",
+  "version": "1.0.0",
+  "api_version": 1,
+  "contributions": [
+    {"id": "plain-text", "label": "Plain text", "kind": "importer"},
+    {"id": "plain-text", "label": "Plain text", "kind": "exporter"}
+  ],
+  "permissions": ["read_document", "write_document"],
+  "entrypoint": {"runtime": "builtin", "handler": "text_io"}
+}

@@ -33,6 +33,7 @@ impl Store {
             root.join("documents"),
             root.join("renders"),
             root.join("assets"),
+            root.join("plugins"),
         ] {
             fs::create_dir_all(&directory).map_err(AppError::storage)?;
         }
@@ -40,6 +41,12 @@ impl Store {
             root,
             write_lock: Mutex::new(()),
         })
+    }
+
+    /// Directory owned by the host for installed plugin packages and enablement state.
+    /// Plugins are deliberately not given this path: they receive only explicit input.
+    pub fn plugins_dir(&self) -> PathBuf {
+        self.root.join("plugins")
     }
 
     pub fn create_template(&self, template: Template) -> Result<Template> {
