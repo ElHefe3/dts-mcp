@@ -35,6 +35,12 @@ impl Client {
     }
 
     fn request(&mut self, method: &str, params: Value) -> Value {
+        let response = self.request_raw(method, params);
+        assert!(response.get("error").is_none(), "MCP error: {response}");
+        response["result"].clone()
+    }
+
+    fn request_raw(&mut self, method: &str, params: Value) -> Value {
         let id = self.next_id;
         self.next_id += 1;
         let request = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
@@ -49,8 +55,7 @@ impl Client {
         );
         let response: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(response["id"], id);
-        assert!(response.get("error").is_none(), "MCP error: {response}");
-        response["result"].clone()
+        response
     }
 
     fn call_tool(&mut self, name: &str, arguments: Value) -> Value {
@@ -58,17 +63,7 @@ impl Client {
     }
 }
 
-impl Drop for Client {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-#[test]
-fn serves_the_complete_template_workflow_over_stdio() {
-    let directory = TempDir::new().unwrap();
-    let mut client = Client::start(&directory);
+fn initialize(client: &mut Client) {
     let initialized = client.request(
         "initialize",
         json!({
@@ -85,13 +80,41 @@ fn serves_the_complete_template_workflow_over_stdio() {
     )
     .unwrap();
     client.stdin.flush().unwrap();
+}
+
+fn template_payload(id: &str, description: &str) -> Value {
+    json!({
+        "schema_version": 1,
+        "id": id,
+        "name": format!("Template {id}"),
+        "version": "1.0.0",
+        "description": description,
+        "sections": [],
+        "defaults": {},
+        "preview_data": {},
+        "render": {"html": "<h1>Preview</h1>", "css": ""}
+    })
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn serves_the_complete_template_workflow_over_stdio() {
+    let directory = TempDir::new().unwrap();
+    let mut client = Client::start(&directory);
+    initialize(&mut client);
 
     let tools = client.request("tools/list", json!({}));
     let tool_list = tools["tools"].as_array().unwrap();
-    assert_eq!(tool_list.len(), 18);
+    assert_eq!(tool_list.len(), 19);
     let gallery_tool = tool_list
         .iter()
-        .find(|tool| tool["name"] == "list_templates")
+        .find(|tool| tool["name"] == "open_template_gallery")
         .unwrap();
     assert_eq!(
         gallery_tool["_meta"]["ui"]["resourceUri"],
@@ -134,7 +157,12 @@ fn serves_the_complete_template_workflow_over_stdio() {
             "render": {"html": "<h1>{{title}}</h1><p>{{body}}</p>", "css": "p { margin: 0; }"}
         }}),
     );
-    let gallery = client.call_tool("list_templates", json!({}));
+    let summaries = client.call_tool("list_templates", json!({}));
+    assert_eq!(summaries["structuredContent"]["templates"][0]["id"], "note");
+    assert!(summaries["structuredContent"]["templates"][0]
+        .get("preview_html")
+        .is_none());
+    let gallery = client.call_tool("open_template_gallery", json!({}));
     assert!(gallery["structuredContent"]["templates"][0]["preview_html"]
         .as_str()
         .unwrap()
@@ -215,4 +243,49 @@ fn serves_the_complete_template_workflow_over_stdio() {
     );
     assert!(directory.path().join("templates/note.json").is_file());
     assert!(directory.path().join("documents/welcome.json").is_file());
+}
+
+#[test]
+fn bounds_template_discovery_without_silently_truncating() {
+    let directory = TempDir::new().unwrap();
+    let mut client = Client::start(&directory);
+    initialize(&mut client);
+
+    for number in 0..100 {
+        client.call_tool(
+            "create_template",
+            json!({"template": template_payload(&format!("fixture-{number:03}"), "compact metadata")}),
+        );
+    }
+
+    let discovery = client.call_tool("list_templates", json!({}));
+    let content = &discovery["structuredContent"];
+    assert_eq!(content["templates"].as_array().unwrap().len(), 100);
+    assert!(serde_json::to_vec(content).unwrap().len() < 32 * 1024);
+    assert!(content["templates"][0].get("preview_html").is_none());
+
+    client.call_tool(
+        "create_template",
+        json!({"template": template_payload("oversized", &"x".repeat(33 * 1024))}),
+    );
+    let response = client.request_raw(
+        "tools/call",
+        json!({"name": "list_templates", "arguments": {}}),
+    );
+    assert!(response["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("32768-byte limit"));
+
+    let mut preview_heavy = template_payload("preview-heavy", "compact metadata");
+    preview_heavy["render"]["html"] = json!("x".repeat(1025 * 1024));
+    client.call_tool("create_template", json!({"template": preview_heavy}));
+    let response = client.request_raw(
+        "tools/call",
+        json!({"name": "open_template_gallery", "arguments": {}}),
+    );
+    assert!(response["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("1048576-byte limit"));
 }
