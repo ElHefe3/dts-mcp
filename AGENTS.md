@@ -1,4 +1,4 @@
-# document-mcp Guidance
+# dts-mcp Guidance
 
 Read `../../AGENTS.md` first: it covers the workspace layout, tickets (beads), branching and commit rules.
 
