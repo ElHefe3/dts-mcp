@@ -1,6 +1,7 @@
 use document_templating_mcp::{
     error::AppError,
     model::{Document, FieldDefinition, FieldType, Template, TemplateRender, TemplateSection},
+    render::MAX_DOCUMENT_DATA_BYTES,
     store::Store,
 };
 use serde_json::json;
@@ -140,4 +141,35 @@ fn handlebars_escapes_document_content() {
     let rendered = store.render_document("safe").unwrap();
     assert!(rendered.html.contains("&lt;Ada&gt;"));
     assert!(!rendered.html.contains("<h1><Ada></h1>"));
+}
+
+#[test]
+fn invalid_templates_and_oversized_document_input_are_not_persisted() {
+    let directory = TempDir::new().unwrap();
+    let store = Store::open(directory.path()).unwrap();
+    store.create_template(template()).unwrap();
+
+    let mut invalid = template();
+    invalid.sections[0].fields.push(FieldDefinition {
+        id: "recipient".into(),
+        path: "alternate_recipient".into(),
+        label: "Alternate recipient".into(),
+        field_type: FieldType::Text,
+        required: false,
+        fields: vec![],
+    });
+    let error = store.update_template(invalid).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("duplicate field id 'recipient' in section 'content'"));
+    assert_eq!(store.get_template("letter").unwrap().version, "1.0.0");
+
+    let error = store
+        .create_document(
+            document("oversized", "letter"),
+            Some(&json!({"extra": "x".repeat(MAX_DOCUMENT_DATA_BYTES)})),
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("document data is"));
+    assert!(!directory.path().join("documents/oversized.json").exists());
 }
