@@ -3,6 +3,7 @@ pub mod error;
 pub mod inspect;
 pub mod model;
 pub mod pdf;
+pub mod plugins;
 pub mod raster;
 pub mod render;
 pub mod server;

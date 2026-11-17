@@ -1,0 +1,14 @@
+{
+  "id": "duplicate-draft",
+  "name": "Duplicate Draft",
+  "version": "1.0.0",
+  "api_version": 1,
+  "contributions": [
+    {
+      "id": "duplicate",
+      "label": "Duplicate draft",
+      "kind": "document_action"
+    }
+  ],
+  "permissions": ["read_document", "write_document"]
+}
