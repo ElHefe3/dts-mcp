@@ -20,6 +20,26 @@ The service installs four example manifests on first startup: `duplicate-draft`,
 plain-text import/export, an editor contribution, and declarative template-pack,
 validation and render-hook contracts respectively.
 
+## DTS-managed HTTP plugins
+
+Use an HTTP plugin for a stateful workflow such as application tracking. DTS
+starts the package only after the operator enables it. It supplies the private
+loopback bind address in `DTS_PLUGIN_BIND` and a fresh bearer token in
+`DTS_PLUGIN_TOKEN`; neither is persisted in `plugin.json`. The plugin must be
+ready at `/health` within five seconds and must authenticate every request.
+
+Declare each public operation as `http_operation`. DTS brokers it at
+`POST /api/plugins/<plugin-id>/operations/<contribution-id>` for the browser
+and through the `call_plugin_operation` MCP tool. Each receives a JSON input and
+returns JSON; requests and results are limited to 256 KiB. Do not add a catch-all
+proxy or let the browser connect to the plugin port. A stopped, crashed or
+unready plugin returns an actionable DTS error and does not take down the host.
+
+The host owns process lifecycle and permission boundaries. The plugin owns its
+own records and any configured external service credentials. v1 deliberately
+does not embed a plugin web application: use contributed operations and a DTS
+workspace view until a separately reviewed UI-extension contract exists.
+
 ## Command protocol
 
 For each invocation DTS writes one JSON object to stdin:

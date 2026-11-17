@@ -24,6 +24,7 @@ use crate::{
         AssetSummary, Deleted, Document, DocumentSummary, EditorState, PdfReport, RenderedPreview,
         Template, TemplateGallery, TemplateList,
     },
+    plugins::PluginManager,
     store::Store,
 };
 
@@ -53,6 +54,7 @@ fn ui_tool_meta(resource_uri: &str) -> MetaObject {
 #[derive(Clone)]
 pub struct DocumentMcpServer {
     store: Arc<Store>,
+    plugins: Arc<PluginManager>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -115,14 +117,42 @@ pub struct PreviewDocumentRequest {
     pub data: Value,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PluginOperationRequest {
+    /// Installed DTS plugin identifier.
+    pub plugin_id: String,
+    /// Declared HTTP operation identifier.
+    pub contribution_id: String,
+    /// Operation-specific JSON, limited by the plugin host to 256 KiB.
+    pub input: Value,
+}
+
 #[tool_router]
 impl DocumentMcpServer {
     pub fn new(store: Store) -> Self {
-        Self::with_shared_store(Arc::new(store))
+        let store = Arc::new(store);
+        let plugins = Arc::new(
+            PluginManager::open(store.plugins_dir()).expect("plugin directory must be available"),
+        );
+        Self { store, plugins }
     }
 
     pub fn with_shared_store(store: Arc<Store>) -> Self {
-        Self { store }
+        let plugins = Arc::new(
+            PluginManager::open(store.plugins_dir()).expect("plugin directory must be available"),
+        );
+        Self { store, plugins }
+    }
+
+    pub fn with_shared_store_and_plugins(store: Arc<Store>, plugins: Arc<PluginManager>) -> Self {
+        Self { store, plugins }
+    }
+
+    pub fn with_plugins(&self, plugins: Arc<PluginManager>) -> Self {
+        Self {
+            store: self.store.clone(),
+            plugins,
+        }
     }
 
     #[tool(description = "Save a new reusable document template")]
@@ -376,6 +406,30 @@ impl DocumentMcpServer {
             id: request.name,
             deleted: true,
         }))
+    }
+
+    #[tool(
+        description = "Invoke a declared operation on an enabled DTS-managed HTTP plugin. DTS keeps the plugin endpoint and credential private; use list_plugin_contributions through the browser API to discover workspace contributions."
+    )]
+    fn call_plugin_operation(
+        &self,
+        Parameters(request): Parameters<PluginOperationRequest>,
+    ) -> Result<Json<Value>, McpError> {
+        self.plugins
+            .invoke_http_operation(&request.plugin_id, &request.contribution_id, request.input)
+            .map(Json)
+            .map_err(mcp_error)
+    }
+
+    #[tool(
+        description = "List enabled DTS plugin contributions, including HTTP operations that can be invoked with call_plugin_operation."
+    )]
+    fn list_plugin_contributions(&self) -> Result<Json<Value>, McpError> {
+        self.plugins
+            .contributions()
+            .and_then(|items| serde_json::to_value(items).map_err(AppError::storage))
+            .map(|contributions| Json(json!({"contributions": contributions})))
+            .map_err(mcp_error)
     }
 }
 

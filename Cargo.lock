@@ -412,6 +412,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
+ "getrandom",
  "handlebars",
  "http-body-util",
  "lopdf",

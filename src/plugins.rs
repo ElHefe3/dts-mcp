@@ -3,7 +3,12 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
+    io::{Read, Write},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::{Component, Path, PathBuf},
+    process::{Child, Command, Stdio},
+    sync::Mutex,
+    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
@@ -48,6 +53,8 @@ pub enum ContributionKind {
     TemplatePack,
     ValidationRule,
     RenderHook,
+    /// A stateful plugin operation exposed through the DTS browser and MCP APIs.
+    HttpOperation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -70,6 +77,19 @@ pub enum PluginEntrypoint {
         #[serde(default)]
         args: Vec<String>,
     },
+    /// A DTS-managed local HTTP process. DTS allocates its loopback address and
+    /// short-lived token, and no client receives either value.
+    Http {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default = "default_health_path")]
+        health_path: String,
+    },
+}
+
+fn default_health_path() -> String {
+    "/health".into()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,13 +112,23 @@ struct PluginState {
 /// preventing the document service from starting.
 pub struct PluginManager {
     root: PathBuf,
+    runtimes: Mutex<BTreeMap<String, HttpRuntime>>,
+}
+
+struct HttpRuntime {
+    child: Child,
+    address: SocketAddr,
+    token: String,
 }
 
 impl PluginManager {
     pub fn open(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
         fs::create_dir_all(&root).map_err(AppError::storage)?;
-        let manager = Self { root };
+        let manager = Self {
+            root,
+            runtimes: Mutex::new(BTreeMap::new()),
+        };
         manager.install_bundled()?;
         Ok(manager)
     }
@@ -169,6 +199,13 @@ impl PluginManager {
                 plugin.status
             )));
         }
+        if enabled {
+            if matches!(plugin.manifest.entrypoint, PluginEntrypoint::Http { .. }) {
+                self.ensure_http_runtime(plugin)?;
+            }
+        } else {
+            self.stop_http_runtime(id);
+        }
         let mut state = self.read_state()?;
         state.enabled.insert(id.into(), enabled);
         self.write_state(&state)
@@ -237,6 +274,11 @@ impl PluginManager {
                     "unknown built-in plugin handler '{handler}'"
                 )))
             }
+            PluginEntrypoint::Http { .. } => {
+                return Err(AppError::Invalid(
+                    "HTTP plugins cannot provide document actions".into(),
+                ))
+            }
         };
         // The host chooses the new ID and keeps the source template. A plugin cannot overwrite a draft it read.
         result.id = available_copy_id(store, document_id)?;
@@ -271,6 +313,11 @@ impl PluginManager {
                     args,
                 )?
                 .data
+            }
+            PluginEntrypoint::Http { .. } => {
+                return Err(AppError::Invalid(
+                    "HTTP plugins cannot import documents".into(),
+                ))
             }
             _ => return Err(AppError::Invalid("plugin does not implement import".into())),
         };
@@ -317,8 +364,55 @@ impl PluginManager {
                     content: response.message.unwrap_or_default(),
                 })
             }
+            PluginEntrypoint::Http { .. } => Err(AppError::Invalid(
+                "HTTP plugins cannot export documents".into(),
+            )),
             _ => Err(AppError::Invalid("plugin does not implement export".into())),
         }
+    }
+
+    /// Invoke a declared HTTP operation. The host owns the loopback endpoint
+    /// and bearer token; callers can only name a declared contribution.
+    pub fn invoke_http_operation(
+        &self,
+        plugin_id: &str,
+        contribution_id: &str,
+        input: Value,
+    ) -> Result<Value> {
+        let plugin = self.ready_plugin(plugin_id)?;
+        require_contribution(&plugin, contribution_id, ContributionKind::HttpOperation)?;
+        let PluginEntrypoint::Http { .. } = &plugin.manifest.entrypoint else {
+            return Err(AppError::Invalid(
+                "plugin operation requires an HTTP plugin".into(),
+            ));
+        };
+        if serde_json::to_vec(&input).map_err(AppError::storage)?.len() > 256 * 1024 {
+            return Err(AppError::Invalid(
+                "plugin operation input exceeds 256 KiB".into(),
+            ));
+        }
+        self.ensure_http_runtime(&plugin)?;
+        let runtimes = self
+            .runtimes
+            .lock()
+            .map_err(|_| AppError::Storage("plugin runtime lock poisoned".into()))?;
+        let runtime = runtimes
+            .get(plugin_id)
+            .ok_or_else(|| AppError::Storage("plugin runtime did not start".into()))?;
+        let response = http_json(
+            runtime.address,
+            "POST",
+            &format!("/operations/{contribution_id}"),
+            &runtime.token,
+            Some(&input),
+        )?;
+        if response.len() > 256 * 1024 {
+            return Err(AppError::Invalid(
+                "plugin operation response exceeds 256 KiB".into(),
+            ));
+        }
+        serde_json::from_slice(&response)
+            .map_err(|error| AppError::Invalid(format!("invalid HTTP plugin response: {error}")))
     }
 
     fn ready_plugin(&self, id: &str) -> Result<InstalledPlugin> {
@@ -339,6 +433,103 @@ impl PluginManager {
         Ok(plugin)
     }
 
+    fn ensure_http_runtime(&self, plugin: &InstalledPlugin) -> Result<()> {
+        let PluginEntrypoint::Http {
+            command,
+            args,
+            health_path,
+        } = &plugin.manifest.entrypoint
+        else {
+            return Ok(());
+        };
+        let mut runtimes = self
+            .runtimes
+            .lock()
+            .map_err(|_| AppError::Storage("plugin runtime lock poisoned".into()))?;
+        if let Some(runtime) = runtimes.get_mut(&plugin.manifest.id) {
+            if runtime
+                .child
+                .try_wait()
+                .map_err(AppError::storage)?
+                .is_none()
+                && http_json(runtime.address, "GET", health_path, &runtime.token, None).is_ok()
+            {
+                return Ok(());
+            }
+            let _ = runtime.child.kill();
+            let _ = runtime.child.wait();
+            runtimes.remove(&plugin.manifest.id);
+        }
+        validate_command(command)?;
+        let executable = plugin.package_dir.join(command);
+        if !executable.is_file() {
+            return Err(AppError::Invalid(
+                "HTTP plugin command is not installed".into(),
+            ));
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(AppError::storage)?;
+        let address = listener.local_addr().map_err(AppError::storage)?;
+        drop(listener);
+        let token = random_token(&plugin.manifest.id);
+        let data_dir = plugin.package_dir.join("data");
+        fs::create_dir_all(&data_dir).map_err(AppError::storage)?;
+        let child = Command::new(executable)
+            .args(args)
+            .current_dir(&plugin.package_dir)
+            .env("DTS_PLUGIN_BIND", address.to_string())
+            .env("DTS_PLUGIN_TOKEN", &token)
+            .env("DTS_PLUGIN_DATA_DIR", &data_dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(AppError::storage)?;
+        runtimes.insert(
+            plugin.manifest.id.clone(),
+            HttpRuntime {
+                child,
+                address,
+                token,
+            },
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let healthy = runtimes.get(&plugin.manifest.id).is_some_and(|runtime| {
+                http_json(runtime.address, "GET", health_path, &runtime.token, None).is_ok()
+            });
+            if healthy {
+                return Ok(());
+            }
+            let exited = runtimes
+                .get_mut(&plugin.manifest.id)
+                .ok_or_else(|| AppError::Storage("plugin runtime disappeared".into()))?
+                .child
+                .try_wait()
+                .map_err(AppError::storage)?
+                .is_some();
+            if exited || Instant::now() >= deadline {
+                if let Some(mut runtime) = runtimes.remove(&plugin.manifest.id) {
+                    let _ = runtime.child.kill();
+                    let _ = runtime.child.wait();
+                }
+                return Err(AppError::Invalid(format!(
+                    "HTTP plugin '{}' did not become ready within 5 seconds",
+                    plugin.manifest.id
+                )));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn stop_http_runtime(&self, id: &str) {
+        if let Ok(mut runtimes) = self.runtimes.lock() {
+            if let Some(mut runtime) = runtimes.remove(id) {
+                let _ = runtime.child.kill();
+                let _ = runtime.child.wait();
+            }
+        }
+    }
+
     fn run_command(
         &self,
         plugin: &InstalledPlugin,
@@ -347,14 +538,7 @@ impl PluginManager {
         command: &str,
         args: &[String],
     ) -> Result<PluginCommandResponse> {
-        if Path::new(command)
-            .components()
-            .any(|part| !matches!(part, Component::Normal(_)))
-        {
-            return Err(AppError::Invalid(
-                "plugin command must be a relative package path".into(),
-            ));
-        }
+        validate_command(command)?;
         let executable = plugin.package_dir.join(command);
         if !executable.is_file() {
             return Err(AppError::Invalid("plugin command is not installed".into()));
@@ -440,6 +624,88 @@ impl PluginManager {
         )
         .map_err(AppError::storage)
     }
+}
+
+impl Drop for PluginManager {
+    fn drop(&mut self) {
+        if let Ok(runtimes) = self.runtimes.get_mut() {
+            for runtime in runtimes.values_mut() {
+                let _ = runtime.child.kill();
+                let _ = runtime.child.wait();
+            }
+        }
+    }
+}
+
+fn validate_command(command: &str) -> Result<()> {
+    if Path::new(command)
+        .components()
+        .any(|part| !matches!(part, Component::Normal(_)))
+    {
+        return Err(AppError::Invalid(
+            "plugin command must be a relative package path".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn random_token(plugin_id: &str) -> String {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).expect("operating system random source must be available");
+    let encoded = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("dts-{plugin_id}-{encoded}")
+}
+
+fn http_json(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Option<&Value>,
+) -> Result<Vec<u8>> {
+    if !path.starts_with('/') || path.contains("..") {
+        return Err(AppError::Invalid("invalid plugin HTTP path".into()));
+    }
+    let mut stream =
+        TcpStream::connect_timeout(&address, Duration::from_secs(2)).map_err(AppError::storage)?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(AppError::storage)?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(AppError::storage)?;
+    let payload = body
+        .map(serde_json::to_vec)
+        .transpose()
+        .map_err(AppError::storage)?
+        .unwrap_or_default();
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        payload.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(AppError::storage)?;
+    stream.write_all(&payload).map_err(AppError::storage)?;
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .map_err(AppError::storage)?;
+    let split = response
+        .windows(4)
+        .position(|part| part == b"\r\n\r\n")
+        .ok_or_else(|| AppError::Storage("invalid HTTP plugin response".into()))?;
+    let head = std::str::from_utf8(&response[..split]).map_err(AppError::storage)?;
+    if !head.starts_with("HTTP/1.1 2") && !head.starts_with("HTTP/1.0 2") {
+        return Err(AppError::Invalid(format!(
+            "HTTP plugin request failed: {}",
+            head.lines().next().unwrap_or("invalid response")
+        )));
+    }
+    Ok(response[split + 4..].to_vec())
 }
 
 #[derive(Debug, Clone, Serialize)]

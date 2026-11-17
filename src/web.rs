@@ -43,8 +43,9 @@ pub async fn serve(store: Store, address: SocketAddr, token: String) -> anyhow::
         anyhow::bail!("DOCUMENT_TEMPLATING_MCP_TOKEN must contain at least 32 characters");
     }
     let store = Arc::new(store);
-    let server = DocumentMcpServer::with_shared_store(store.clone());
-    let app = router(store, server, token);
+    let plugins = Arc::new(PluginManager::open(store.plugins_dir()).map_err(anyhow::Error::new)?);
+    let server = DocumentMcpServer::with_shared_store_and_plugins(store.clone(), plugins.clone());
+    let app = router_with_plugins(store, server, token, plugins);
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(%address, "HTTP server listening");
     axum::serve(listener, app).await?;
@@ -55,6 +56,15 @@ pub fn router(store: Arc<Store>, server: DocumentMcpServer, token: String) -> Ro
     let plugins = Arc::new(
         PluginManager::open(store.plugins_dir()).expect("plugin directory must be available"),
     );
+    router_with_plugins(store, server.with_plugins(plugins.clone()), token, plugins)
+}
+
+fn router_with_plugins(
+    store: Arc<Store>,
+    server: DocumentMcpServer,
+    token: String,
+    plugins: Arc<PluginManager>,
+) -> Router {
     let state = Arc::new(WebState {
         store,
         plugins,
@@ -73,6 +83,10 @@ pub fn router(store: Arc<Store>, server: DocumentMcpServer, token: String) -> Ro
         .route("/api/plugins", get(list_plugins))
         .route("/api/plugins/{id}", axum::routing::put(set_plugin_enabled))
         .route("/api/plugin-contributions", get(list_plugin_contributions))
+        .route(
+            "/api/plugins/{plugin_id}/operations/{contribution_id}",
+            post(invoke_plugin_operation),
+        )
         .route(
             "/api/documents/{id}/plugins/{plugin_id}/{contribution_id}",
             post(invoke_document_action),
@@ -270,6 +284,21 @@ async fn list_plugin_contributions(
     Ok(Json(
         json!({"contributions": state.plugins.contributions()?}),
     ))
+}
+
+/// Browser clients always call DTS. The host chooses whether and how a local
+/// HTTP plugin is reachable, so plugin ports and per-instance credentials never
+/// leave this process.
+async fn invoke_plugin_operation(
+    State(state): State<Arc<WebState>>,
+    Path((plugin_id, contribution_id)): Path<(String, String)>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(state.plugins.invoke_http_operation(
+        &plugin_id,
+        &contribution_id,
+        input,
+    )?))
 }
 
 async fn invoke_document_action(

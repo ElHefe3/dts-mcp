@@ -82,8 +82,15 @@ Build first with `cargo build`, then configure a client to launch the binary. Th
 | `delete_asset` | `name` | Deletion status; refused while referenced |
 | `preview_document` | `template_id`, `data` | HTML for unsaved data |
 | `open_document_editor` | `id` | Interactive editor (MCP App) |
+| `list_plugin_contributions` | none | Enabled plugin contributions, including HTTP operations |
+| `call_plugin_operation` | `plugin_id`, `contribution_id`, `input` | Invoke a declared DTS-managed HTTP plugin operation |
 
 IDs contain up to 64 lowercase letters, digits, or interior hyphens. Template updates deliberately affect existing documents on their next render. Documents must be moved to another template or deleted before their referenced template can be deleted.
+
+The browser's authenticated API also brokers declared HTTP plugin operations at
+`POST /api/plugins/<plugin-id>/operations/<contribution-id>`. DTS starts those
+local packages, owns their loopback address and per-process credential, and
+exposes no direct browser route to a plugin. See [Developing DTS plugins](docs/plugin-development.md).
 
 `list_templates` is the stable discovery entry point and never includes rendered
 previews or renderer source. Call `open_template_gallery` only when a visual

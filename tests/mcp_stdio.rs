@@ -111,11 +111,17 @@ fn serves_the_complete_template_workflow_over_stdio() {
 
     let tools = client.request("tools/list", json!({}));
     let tool_list = tools["tools"].as_array().unwrap();
-    assert_eq!(tool_list.len(), 19);
+    assert_eq!(tool_list.len(), 21);
     let gallery_tool = tool_list
         .iter()
         .find(|tool| tool["name"] == "open_template_gallery")
         .unwrap();
+    assert!(tool_list
+        .iter()
+        .any(|tool| tool["name"] == "call_plugin_operation"));
+    assert!(tool_list
+        .iter()
+        .any(|tool| tool["name"] == "list_plugin_contributions"));
     assert_eq!(
         gallery_tool["_meta"]["ui"]["resourceUri"],
         "ui://document-templating/gallery"
