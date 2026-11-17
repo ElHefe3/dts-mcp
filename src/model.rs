@@ -113,6 +113,14 @@ impl From<&Template> for TemplateSummary {
     }
 }
 
+/// Compact response returned by template discovery.
+///
+/// It deliberately excludes schema, renderer source and rendered previews.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TemplateList {
+    pub templates: Vec<TemplateSummary>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GalleryTemplate {
     pub id: String,

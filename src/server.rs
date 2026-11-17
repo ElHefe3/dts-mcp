@@ -14,7 +14,7 @@ use rmcp::{
     service::{RequestContext, RoleServer},
     tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     error::AppError,
     model::{
         AssetSummary, Deleted, Document, DocumentSummary, EditorState, PdfReport, RenderedPreview,
-        Template, TemplateGallery,
+        Template, TemplateGallery, TemplateList,
     },
     store::Store,
 };
@@ -32,6 +32,10 @@ const EDITOR_UI_URI: &str = "ui://document-templating/editor";
 const UI_MIME_TYPE: &str = "text/html;profile=mcp-app";
 const DOCUMENT_URI_PREFIX: &str = "document://renders/";
 const APP_HTML: &str = include_str!("../web/dist/index.html");
+/// Discovery stays small enough for routine agent context and tool transports.
+const MAX_TEMPLATE_LIST_BYTES: usize = 32 * 1024;
+/// Gallery previews are opt-in, but still bounded rather than silently truncated.
+const MAX_TEMPLATE_GALLERY_BYTES: usize = 1024 * 1024;
 
 fn gallery_ui_meta() -> MetaObject {
     ui_tool_meta(GALLERY_UI_URI)
@@ -133,11 +137,22 @@ impl DocumentMcpServer {
     }
 
     #[tool(
-        description = "Show saved templates in a visual grid with mock-data previews",
+        description = "List compact template metadata only (ID, name, version and description); no previews or renderer source"
+    )]
+    fn list_templates(&self) -> Result<Json<TemplateList>, McpError> {
+        let list = TemplateList {
+            templates: self.store.list_templates().map_err(mcp_error)?,
+        };
+        bounded_json(list, MAX_TEMPLATE_LIST_BYTES, "template discovery").map(Json)
+    }
+
+    #[tool(
+        description = "Open the visual template gallery with rendered mock-data previews. This explicit response is limited to 1 MiB; use get_template for complete fields, HTML and CSS.",
         meta = gallery_ui_meta()
     )]
-    fn list_templates(&self) -> Result<Json<TemplateGallery>, McpError> {
-        self.store.template_gallery().map(Json).map_err(mcp_error)
+    fn open_template_gallery(&self) -> Result<Json<TemplateGallery>, McpError> {
+        let gallery = self.store.template_gallery().map_err(mcp_error)?;
+        bounded_json(gallery, MAX_TEMPLATE_GALLERY_BYTES, "template gallery").map(Json)
     }
 
     #[tool(description = "Get a complete template, including fields, defaults, HTML, and CSS")]
@@ -418,7 +433,8 @@ impl ServerHandler for DocumentMcpServer {
              the renderer has no network access. render_pdf returns a report: fix every warning \
              (page budget, missing text, links or images) and render again. Use render_page_images \
              to look at the printed pages. Drafts may be incomplete; required fields are checked \
-             when rendering. Use list_templates to show the visual gallery and \
+             when rendering. Use list_templates for compact discovery, open_template_gallery for \
+             rendered previews, and get_template for renderer source. Use \
              open_document_editor for the interactive editor. Always present the rendered \
              attachment to the user; if the client supplies local_path, give a clickable link.",
         )
@@ -528,4 +544,27 @@ fn mcp_error(error: AppError) -> McpError {
     } else {
         McpError::internal_error(error.to_string(), None)
     }
+}
+
+fn bounded_json<T: Serialize>(
+    value: T,
+    max_bytes: usize,
+    response_name: &str,
+) -> Result<T, McpError> {
+    let bytes = serde_json::to_vec(&value).map_err(|error| {
+        McpError::internal_error(
+            format!("could not serialize {response_name}: {error}"),
+            None,
+        )
+    })?;
+    if bytes.len() > max_bytes {
+        return Err(McpError::invalid_params(
+            format!(
+                "{response_name} is {} bytes, exceeding the {}-byte limit; reduce the requested response or retrieve one template with get_template",
+                bytes.len(), max_bytes
+            ),
+            None,
+        ));
+    }
+    Ok(value)
 }
