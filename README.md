@@ -2,6 +2,8 @@
 
 A local-first Model Context Protocol server for reusable document templates and structured documents. It uses the official Rust MCP SDK (`rmcp`) and supports stdio and authenticated streamable HTTP. See [DEPLOYMENT.md](DEPLOYMENT.md) for the deployed Docker service and SSH client connection.
 
+Project work is tracked in [docs/tracker](docs/tracker/README.md).
+
 ## Features
 
 - Persist templates independently from documents.
@@ -40,13 +42,13 @@ Only stderr is used for logging; stdout is reserved for MCP messages.
 
 ## MCP client configuration
 
-Build first with `cargo build`, then configure a client to launch the binary. For example, a client configuration using an absolute Windows path can use:
+Build first with `cargo build`, then configure a client to launch the binary. The following example assumes the client starts in the repository root:
 
 ```json
 {
   "mcpServers": {
     "documents": {
-      "command": "D:\\projects\\job-hunt\\documents\\document-mcp\\target\\debug\\document-templating-mcp.exe",
+      "command": ".\\target\\debug\\document-templating-mcp.exe",
       "env": {
         "DOCUMENT_TEMPLATING_MCP_DATA_DIR": "C:\\document-mcp-data"
       }
@@ -60,8 +62,9 @@ Build first with `cargo build`, then configure a client to launch the binary. Fo
 | Tool | Input | Result |
 | --- | --- | --- |
 | `create_template` | `template` | Saved template |
-| `list_templates` | none | Template summaries |
-| `get_template` | `id` | Full template |
+| `list_templates` | none | Compact template summaries (ID, name, version, description); capped at 32 KiB |
+| `open_template_gallery` | none | Explicit visual gallery with rendered mock-data previews; capped at 1 MiB |
+| `get_template` | `id` | Full template, including fields, defaults, HTML and CSS |
 | `update_template` | `template` | Updated template |
 | `delete_template` | `id` | Deletion status |
 | `create_document` | `id`, `name`, `template_id`, optional `data` | New document |
@@ -79,6 +82,15 @@ Build first with `cargo build`, then configure a client to launch the binary. Fo
 | `open_document_editor` | `id` | Interactive editor (MCP App) |
 
 IDs contain up to 64 lowercase letters, digits, or interior hyphens. Template updates deliberately affect existing documents on their next render. Documents must be moved to another template or deleted before their referenced template can be deleted.
+
+`list_templates` is the stable discovery entry point and never includes rendered
+previews or renderer source. Call `open_template_gallery` only when a visual
+gallery is needed, and call `get_template` for one template's fields, HTML and
+CSS. Responses are never truncated: discovery returns an error above 32 KiB and
+the explicit gallery returns an error above 1 MiB. In either case, reduce the
+requested response or retrieve a single template with `get_template`. Clients that
+previously treated `list_templates` as a preview gallery must use
+`open_template_gallery`; the bundled editor already does so.
 
 ## Template example
 
