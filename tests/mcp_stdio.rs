@@ -278,7 +278,10 @@ fn bounds_template_discovery_without_silently_truncating() {
         .contains("32768-byte limit"));
 
     let mut preview_heavy = template_payload("preview-heavy", "compact metadata");
-    preview_heavy["render"]["html"] = json!("x".repeat(1025 * 1024));
+    preview_heavy["defaults"] = json!({"items": []});
+    preview_heavy["preview_data"] = json!({"items": vec!["x".repeat(2000); 100]});
+    preview_heavy["render"]["html"] =
+        json!("{{#each items}}{{this}}{{this}}{{this}}{{this}}{{this}}{{this}}{{/each}}");
     client.call_tool("create_template", json!({"template": preview_heavy}));
     let response = client.request_raw(
         "tools/call",
@@ -287,7 +290,7 @@ fn bounds_template_discovery_without_silently_truncating() {
     assert!(response["error"]["message"]
         .as_str()
         .unwrap()
-        .contains("1048576-byte limit"));
+        .contains("1048576"));
 }
 
 #[test]
