@@ -215,4 +215,9 @@ podman build -f Containerfile -t localhost/document-templating-mcp:test .
 The server supports stdio and authenticated HTTP transport. Documents are exported
 as HTML and PDF. Multi-user isolation and cross-process database coordination are
 not included. File writes are serialized within one server
-process; run only one server process against a given data directory.
+process; run only one server process against a given data directory. Document
+updates replace the complete document and are last-write-wins within that one
+process; there is no revision field or optimistic conflict detection. Clients
+with more than one editor should retrieve immediately before updating and surface
+their own overwrite confirmation. A future revision-based conflict protocol would
+require a persisted-data migration and is deliberately not implied by this API.

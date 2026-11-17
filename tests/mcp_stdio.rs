@@ -35,6 +35,12 @@ impl Client {
     }
 
     fn request(&mut self, method: &str, params: Value) -> Value {
+        let response = self.request_raw(method, params);
+        assert!(response.get("error").is_none(), "MCP error: {response}");
+        response["result"].clone()
+    }
+
+    fn request_raw(&mut self, method: &str, params: Value) -> Value {
         let id = self.next_id;
         self.next_id += 1;
         let request = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
@@ -49,8 +55,7 @@ impl Client {
         );
         let response: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(response["id"], id);
-        assert!(response.get("error").is_none(), "MCP error: {response}");
-        response["result"].clone()
+        response
     }
 
     fn call_tool(&mut self, name: &str, arguments: Value) -> Value {
@@ -215,4 +220,132 @@ fn serves_the_complete_template_workflow_over_stdio() {
     );
     assert!(directory.path().join("templates/note.json").is_file());
     assert!(directory.path().join("documents/welcome.json").is_file());
+}
+
+#[test]
+fn document_contracts_preserve_structured_data_and_report_field_paths() {
+    let directory = TempDir::new().unwrap();
+    let mut client = Client::start(&directory);
+    let initialized = client.request(
+        "initialize",
+        json!({
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "contract-test", "version": "1.0.0"}
+        }),
+    );
+    assert_eq!(initialized["serverInfo"]["name"], "document-templating-mcp");
+    writeln!(
+        client.stdin,
+        "{}",
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    )
+    .unwrap();
+    client.stdin.flush().unwrap();
+
+    let tools = client.request("tools/list", json!({}));
+    let update_tool = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "update_document")
+        .unwrap();
+    assert!(update_tool["inputSchema"]["properties"]
+        .get("document")
+        .is_some());
+    assert!(update_tool["inputSchema"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|field| field == "document"));
+
+    let empty = client.call_tool("list_documents", json!({}));
+    assert_eq!(empty["structuredContent"]["documents"], json!([]));
+    client.call_tool(
+        "create_template",
+        json!({"template": {
+            "schema_version": 1,
+            "id": "profile",
+            "name": "Profile",
+            "version": "1.0.0",
+            "description": "Nested document contract fixture",
+            "sections": [{"id": "content", "label": "Content", "fields": [
+                {"id": "skills", "path": "skills", "label": "Skills", "type": "string_list"},
+                {"id": "positions", "path": "positions", "label": "Positions", "type": "object_list", "fields": [
+                    {"id": "company", "path": "company", "label": "Company", "type": "text"}
+                ]}
+            ]}],
+            "defaults": {"profile": {"name": "", "address": {"city": ""}}, "skills": [], "positions": []},
+            "render": {"html": "<h1>{{profile.name}}</h1>", "css": ""}
+        }}),
+    );
+    let first_data = json!({
+        "profile": {"name": "Ada", "address": {"city": "Cape Town"}, "preferences": {"remote": true}},
+        "skills": ["Rust", "Go"],
+        "positions": [{"company": "Acme", "title": "Engineer"}]
+    });
+    let first = client.call_tool(
+        "create_document",
+        json!({"id": "ada", "name": "Ada profile", "template_id": "profile", "data": first_data}),
+    );
+    assert_eq!(
+        first["structuredContent"]["data"]["profile"]["preferences"]["remote"],
+        true
+    );
+    assert_eq!(
+        first["structuredContent"]["data"]["positions"][0]["title"],
+        "Engineer"
+    );
+
+    let single = client.call_tool("list_documents", json!({}));
+    assert_eq!(
+        single["structuredContent"]["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let mut updated = first["structuredContent"].clone();
+    updated["data"] = json!({
+        "profile": {"name": "Ada", "address": {"city": "Durban"}, "preferences": {"remote": false}},
+        "skills": ["Rust", "TypeScript"],
+        "positions": [{"company": "Beta", "title": "Architect"}, {"company": "Gamma", "title": "Advisor"}]
+    });
+    client.call_tool("update_document", json!({"document": updated}));
+    let retrieved = client.call_tool("get_document", json!({"id": "ada"}));
+    assert_eq!(
+        retrieved["structuredContent"]["data"]["profile"]["address"]["city"],
+        "Durban"
+    );
+    assert_eq!(
+        retrieved["structuredContent"]["data"]["positions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    client.call_tool(
+        "create_document",
+        json!({"id": "second", "name": "Second profile", "template_id": "profile", "data": {}}),
+    );
+    let multiple = client.call_tool("list_documents", json!({}));
+    assert_eq!(
+        multiple["structuredContent"]["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let invalid = client.request_raw(
+        "tools/call",
+        json!({"name": "create_document", "arguments": {
+            "id": "invalid", "name": "Invalid profile", "template_id": "profile", "data": {"skills": [42]}
+        }}),
+    );
+    assert!(invalid["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("skills must contain only strings"));
 }
